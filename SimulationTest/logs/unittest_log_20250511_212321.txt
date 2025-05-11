@@ -1,0 +1,398 @@
+=== Trading System Unit Test Log ===
+Timestamp: 2025-05-11 21:23:21
+=================================
+
+Configuration Settings:
+Tests:Mode = unit
+Tests:Verbose = False
+Tests:GenerateTestCoverage = True
+Tests:CoverageOutputPath = ./logs/coverage
+Tests:TestTimeout = not set
+Tests:RetryCount = not set
+
+Effective Configuration Values:
+Verbose: False
+GenerateTestCoverage: True
+CoverageOutputPath: ./logs/coverage
+TestTimeout: 30
+RetryCount: 3
+
+Test Assembly: C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\bin\Debug\net9.0\SimulationTest.dll
+
+Discovered 6 test classes:
+  - AccountServiceTests
+  - IdentityServiceTests
+  - MarketDataServiceTests
+  - NotificationServiceTests
+  - RiskServiceTests
+  - TradingServiceTests
+
+  Test: CheckConnectivity_AccountService_ShouldBeAccessible
+  Description: Test connectivity to Account Service
+  Start time: 2025-05-11 21:23:21.244
+  Result: PASSED
+  End time: 2025-05-11 21:23:21.264
+  Duration: 15.62 ms
+
+  Test: CreateWithdrawal_WithValidData_ShouldSucceed
+  Description: Test creating a withdrawal with valid data
+  Start time: 2025-05-11 21:23:21.267
+  Retry attempt 1 of 3
+  Retry attempt 2 of 3
+  Result: FAILED
+  End time: 2025-05-11 21:23:21.270
+  Error: Exception occurred during test: No authentication token available. Tests must be properly sequenced to run identity tests first (Register_WithValidData_ShouldSucceed followed by Login_WithValidCredentials_ShouldReturnToken).
+  Stack trace:    at SimulationTest.Tests.ApiTestBase.EnsureAuthenticatedAsync() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\ApiTestBase.cs:line 145
+   at SimulationTest.Tests.AccountServiceTests.CreateWithdrawal_WithValidData_ShouldSucceed() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\AccountServiceTests.cs:line 221
+
+  Test: GetWithdrawalStatus_WithValidId_ShouldReturnWithdrawal
+  Description: Test getting withdrawal status with valid ID
+  Start time: 2025-05-11 21:23:21.290
+  Retry attempt 1 of 3
+  Retry attempt 2 of 3
+  Result: FAILED
+  End time: 2025-05-11 21:23:21.293
+  Error: Exception occurred during test: No authentication token available. Tests must be properly sequenced to run identity tests first (Register_WithValidData_ShouldSucceed followed by Login_WithValidCredentials_ShouldReturnToken).
+  Stack trace:    at SimulationTest.Tests.ApiTestBase.EnsureAuthenticatedAsync() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\ApiTestBase.cs:line 145
+   at SimulationTest.Tests.AccountServiceTests.GetWithdrawalStatus_WithValidId_ShouldReturnWithdrawal() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\AccountServiceTests.cs:line 306
+
+  Test: CheckConnectivity_IdentityService_ShouldBeAccessible
+  Description: Test connectivity to Identity Service
+  Start time: 2025-05-11 21:23:21.293
+  Result: PASSED
+  End time: 2025-05-11 21:23:21.310
+  Duration: 14.05 ms
+
+  Test: GetSymbols_ShouldReturnSymbols
+  Description: Test getting trading symbols
+  Start time: 2025-05-11 21:23:21.311
+  Retry attempt 1 of 3
+  Retry attempt 2 of 3
+  Result: FAILED
+  End time: 2025-05-11 21:23:21.378
+  Error: Exception occurred during test: API request failed: 
+  Stack trace:    at SimulationTest.Tests.ApiTestBase.GetAsync[T](String serviceName, String endpoint, Boolean requiresAuth) in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\ApiTestBase.cs:line 174
+   at SimulationTest.Tests.MarketDataServiceTests.GetSymbols_ShouldReturnSymbols() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\MarketDataServiceTests.cs:line 27
+
+  Test: GetTicker_WithValidSymbol_ShouldReturnMarketData
+  Description: Test getting ticker data for a valid symbol
+  Start time: 2025-05-11 21:23:21.379
+  Retry attempt 1 of 3
+  Retry attempt 2 of 3
+  Result: FAILED
+  End time: 2025-05-11 21:23:21.423
+  Error: Exception occurred during test: Response status code does not indicate success: 404 (Not Found).
+  Stack trace:    at System.Net.Http.HttpResponseMessage.EnsureSuccessStatusCode()
+   at SimulationTest.Tests.ApiTestBase.GetAsync[T](String serviceName, String endpoint, Boolean requiresAuth) in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\ApiTestBase.cs:line 169
+   at SimulationTest.Tests.MarketDataServiceTests.GetTicker_WithValidSymbol_ShouldReturnMarketData() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\MarketDataServiceTests.cs:line 69
+
+  Test: GetMarketSummary_ShouldReturnSummary
+  Description: Test getting market summary
+  Start time: 2025-05-11 21:23:21.424
+  Retry attempt 1 of 3
+  Retry attempt 2 of 3
+  Result: FAILED
+  End time: 2025-05-11 21:23:21.465
+  Error: Exception occurred during test: API request failed: 
+  Stack trace:    at SimulationTest.Tests.ApiTestBase.GetAsync[T](String serviceName, String endpoint, Boolean requiresAuth) in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\ApiTestBase.cs:line 174
+   at SimulationTest.Tests.MarketDataServiceTests.GetMarketSummary_ShouldReturnSummary() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\MarketDataServiceTests.cs:line 119
+
+  Test: GetOrderBookDepth_WithValidSymbol_ShouldReturnOrderBook
+  Description: Test getting order book depth for a valid symbol
+  Start time: 2025-05-11 21:23:21.465
+  Retry attempt 1 of 3
+  Retry attempt 2 of 3
+  Result: FAILED
+  End time: 2025-05-11 21:23:21.505
+  Error: Exception occurred during test: Response status code does not indicate success: 404 (Not Found).
+  Stack trace:    at System.Net.Http.HttpResponseMessage.EnsureSuccessStatusCode()
+   at SimulationTest.Tests.ApiTestBase.GetAsync[T](String serviceName, String endpoint, Boolean requiresAuth) in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\ApiTestBase.cs:line 169
+   at SimulationTest.Tests.MarketDataServiceTests.GetOrderBookDepth_WithValidSymbol_ShouldReturnOrderBook() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\MarketDataServiceTests.cs:line 155
+
+  Test: GetKlines_WithValidParameters_ShouldReturnKlines
+  Description: Test getting candlestick data with valid parameters
+  Start time: 2025-05-11 21:23:21.506
+  Retry attempt 1 of 3
+  Retry attempt 2 of 3
+  Result: FAILED
+  End time: 2025-05-11 21:23:21.550
+  Error: Exception occurred during test: The JSON value could not be converted to SimulationTest.Tests.ApiResponse`1[System.Collections.Generic.List`1[CommonLib.Models.Market.Kline]]. Path: $ | LineNumber: 0 | BytePositionInLine: 1.
+  Stack trace:    at System.Text.Json.ThrowHelper.ThrowJsonException_DeserializeUnableToConvertValue(Type propertyType)
+   at System.Text.Json.Serialization.Converters.ObjectDefaultConverter`1.OnTryRead(Utf8JsonReader& reader, Type typeToConvert, JsonSerializerOptions options, ReadStack& state, T& value)
+   at System.Text.Json.Serialization.JsonConverter`1.TryRead(Utf8JsonReader& reader, Type typeToConvert, JsonSerializerOptions options, ReadStack& state, T& value, Boolean& isPopulatedValue)
+   at System.Text.Json.Serialization.JsonConverter`1.ReadCore(Utf8JsonReader& reader, T& value, JsonSerializerOptions options, ReadStack& state)
+   at System.Text.Json.Serialization.Metadata.JsonTypeInfo`1.ContinueDeserialize(ReadBufferState& bufferState, JsonReaderState& jsonReaderState, ReadStack& readStack, T& value)
+   at System.Text.Json.Serialization.Metadata.JsonTypeInfo`1.DeserializeAsync(Stream utf8Json, CancellationToken cancellationToken)
+   at System.Net.Http.Json.HttpContentJsonExtensions.ReadFromJsonAsyncCore[T](HttpContent content, JsonSerializerOptions options, CancellationToken cancellationToken)
+   at SimulationTest.Tests.ApiTestBase.GetAsync[T](String serviceName, String endpoint, Boolean requiresAuth) in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\ApiTestBase.cs:line 171
+   at SimulationTest.Tests.MarketDataServiceTests.GetKlines_WithValidParameters_ShouldReturnKlines() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\MarketDataServiceTests.cs:line 213
+
+  Test: GetRecentTrades_WithValidSymbol_ShouldReturnTrades
+  Description: Test getting recent trades for a valid symbol
+  Start time: 2025-05-11 21:23:21.551
+  Retry attempt 1 of 3
+  Retry attempt 2 of 3
+  Result: FAILED
+  End time: 2025-05-11 21:23:21.591
+  Error: Exception occurred during test: The JSON value could not be converted to SimulationTest.Tests.ApiResponse`1[System.Collections.Generic.List`1[CommonLib.Models.Market.TradeResponse]]. Path: $ | LineNumber: 0 | BytePositionInLine: 1.
+  Stack trace:    at System.Text.Json.ThrowHelper.ThrowJsonException_DeserializeUnableToConvertValue(Type propertyType)
+   at System.Text.Json.Serialization.Converters.ObjectDefaultConverter`1.OnTryRead(Utf8JsonReader& reader, Type typeToConvert, JsonSerializerOptions options, ReadStack& state, T& value)
+   at System.Text.Json.Serialization.JsonConverter`1.TryRead(Utf8JsonReader& reader, Type typeToConvert, JsonSerializerOptions options, ReadStack& state, T& value, Boolean& isPopulatedValue)
+   at System.Text.Json.Serialization.JsonConverter`1.ReadCore(Utf8JsonReader& reader, T& value, JsonSerializerOptions options, ReadStack& state)
+   at System.Text.Json.Serialization.Metadata.JsonTypeInfo`1.ContinueDeserialize(ReadBufferState& bufferState, JsonReaderState& jsonReaderState, ReadStack& readStack, T& value)
+   at System.Text.Json.Serialization.Metadata.JsonTypeInfo`1.DeserializeAsync(Stream utf8Json, CancellationToken cancellationToken)
+   at System.Net.Http.Json.HttpContentJsonExtensions.ReadFromJsonAsyncCore[T](HttpContent content, JsonSerializerOptions options, CancellationToken cancellationToken)
+   at SimulationTest.Tests.ApiTestBase.GetAsync[T](String serviceName, String endpoint, Boolean requiresAuth) in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\ApiTestBase.cs:line 171
+   at SimulationTest.Tests.MarketDataServiceTests.GetRecentTrades_WithValidSymbol_ShouldReturnTrades() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\MarketDataServiceTests.cs:line 247
+
+  Test: CheckConnectivity_NotificationService_ShouldBeAccessible
+  Description: Test connectivity to Notification Service
+  Start time: 2025-05-11 21:23:21.592
+  Result: PASSED
+  End time: 2025-05-11 21:23:21.610
+  Duration: 16.31 ms
+
+  Test: GetNotifications_WhenAuthenticated_ShouldReturnNotifications
+  Description: Test getting notifications when authenticated
+  Start time: 2025-05-11 21:23:21.610
+  Retry attempt 1 of 3
+  Retry attempt 2 of 3
+  Result: FAILED
+  End time: 2025-05-11 21:23:21.614
+  Error: Exception occurred during test: No authentication token available. Tests must be properly sequenced to run identity tests first (Register_WithValidData_ShouldSucceed followed by Login_WithValidCredentials_ShouldReturnToken).
+  Stack trace:    at SimulationTest.Tests.ApiTestBase.EnsureAuthenticatedAsync() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\ApiTestBase.cs:line 145
+   at SimulationTest.Tests.NotificationServiceTests.GetNotifications_WhenAuthenticated_ShouldReturnNotifications() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\NotificationServiceTests.cs:line 65
+
+  Test: UpdateNotificationSettings_WithValidData_ShouldSucceed
+  Description: Test updating notification settings
+  Start time: 2025-05-11 21:23:21.614
+  Retry attempt 1 of 3
+  Retry attempt 2 of 3
+  Result: FAILED
+  End time: 2025-05-11 21:23:21.618
+  Error: Exception occurred during test: No authentication token available. Tests must be properly sequenced to run identity tests first (Register_WithValidData_ShouldSucceed followed by Login_WithValidCredentials_ShouldReturnToken).
+  Stack trace:    at SimulationTest.Tests.ApiTestBase.EnsureAuthenticatedAsync() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\ApiTestBase.cs:line 145
+   at SimulationTest.Tests.NotificationServiceTests.UpdateNotificationSettings_WithValidData_ShouldSucceed() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\NotificationServiceTests.cs:line 103
+
+  Test: MarkNotificationAsRead_WithValidId_ShouldSucceed
+  Description: Test marking a notification as read
+  Start time: 2025-05-11 21:23:21.619
+  Retry attempt 1 of 3
+  Retry attempt 2 of 3
+  Result: FAILED
+  End time: 2025-05-11 21:23:21.622
+  Error: Exception occurred during test: No authentication token available. Tests must be properly sequenced to run identity tests first (Register_WithValidData_ShouldSucceed followed by Login_WithValidCredentials_ShouldReturnToken).
+  Stack trace:    at SimulationTest.Tests.ApiTestBase.EnsureAuthenticatedAsync() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\ApiTestBase.cs:line 145
+   at SimulationTest.Tests.NotificationServiceTests.MarkNotificationAsRead_WithValidId_ShouldSucceed() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\NotificationServiceTests.cs:line 168
+
+  Test: WebSocketConnection_ShouldEstablishConnection
+  Description: Test web socket connection to notification service
+  Start time: 2025-05-11 21:23:21.623
+  Retry attempt 1 of 3
+  Retry attempt 2 of 3
+  Result: FAILED
+  End time: 2025-05-11 21:23:21.626
+  Error: Exception occurred during WebSocket test: No authentication token available. Tests must be properly sequenced to run identity tests first (Register_WithValidData_ShouldSucceed followed by Login_WithValidCredentials_ShouldReturnToken).
+  Stack trace:    at SimulationTest.Tests.ApiTestBase.EnsureAuthenticatedAsync() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\ApiTestBase.cs:line 145
+   at SimulationTest.Tests.NotificationServiceTests.WebSocketConnection_ShouldEstablishConnection() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\NotificationServiceTests.cs:line 227
+
+  Test: GetRiskStatus_WhenAuthenticated_ShouldReturnRiskProfile
+  Description: Test getting risk status when authenticated
+  Start time: 2025-05-11 21:23:21.627
+  Retry attempt 1 of 3
+  Retry attempt 2 of 3
+  Result: FAILED
+  End time: 2025-05-11 21:23:21.630
+  Error: Exception occurred during test: No authentication token available. Tests must be properly sequenced to run identity tests first (Register_WithValidData_ShouldSucceed followed by Login_WithValidCredentials_ShouldReturnToken).
+  Stack trace:    at SimulationTest.Tests.ApiTestBase.EnsureAuthenticatedAsync() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\ApiTestBase.cs:line 145
+   at SimulationTest.Tests.RiskServiceTests.GetRiskStatus_WhenAuthenticated_ShouldReturnRiskProfile() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\RiskServiceTests.cs:line 28
+
+  Test: GetTradingLimits_WhenAuthenticated_ShouldReturnRiskRules
+  Description: Test getting trading limits when authenticated
+  Start time: 2025-05-11 21:23:21.631
+  Retry attempt 1 of 3
+  Retry attempt 2 of 3
+  Result: FAILED
+  End time: 2025-05-11 21:23:21.634
+  Error: Exception occurred during test: No authentication token available. Tests must be properly sequenced to run identity tests first (Register_WithValidData_ShouldSucceed followed by Login_WithValidCredentials_ShouldReturnToken).
+  Stack trace:    at SimulationTest.Tests.ApiTestBase.EnsureAuthenticatedAsync() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\ApiTestBase.cs:line 145
+   at SimulationTest.Tests.RiskServiceTests.GetTradingLimits_WhenAuthenticated_ShouldReturnRiskRules() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\RiskServiceTests.cs:line 73
+
+  Test: AcknowledgeRiskAlert_WithValidId_ShouldSucceed
+  Description: Test acknowledging a risk alert with valid ID
+  Start time: 2025-05-11 21:23:21.634
+  Retry attempt 1 of 3
+  Retry attempt 2 of 3
+  Result: FAILED
+  End time: 2025-05-11 21:23:21.639
+  Error: Exception occurred during test: No authentication token available. Tests must be properly sequenced to run identity tests first (Register_WithValidData_ShouldSucceed followed by Login_WithValidCredentials_ShouldReturnToken).
+  Stack trace:    at SimulationTest.Tests.ApiTestBase.EnsureAuthenticatedAsync() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\ApiTestBase.cs:line 145
+   at SimulationTest.Tests.RiskServiceTests.AcknowledgeRiskAlert_WithValidId_ShouldSucceed() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\RiskServiceTests.cs:line 110
+
+  Test: CheckConnectivity_TradingService_ShouldBeAccessible
+  Description: Test connectivity to Trading Service
+  Start time: 2025-05-11 21:23:21.639
+  Result: PASSED
+  End time: 2025-05-11 21:23:21.657
+  Duration: 16.11 ms
+
+  Test: CreateOrder_WithValidData_ShouldReturnOrder
+  Description: Test creating an order with valid data
+  Start time: 2025-05-11 21:23:21.658
+  Retry attempt 1 of 3
+  Retry attempt 2 of 3
+  Result: FAILED
+  End time: 2025-05-11 21:23:21.661
+  Error: Exception occurred during test: No authentication token available. Tests must be properly sequenced to run identity tests first (Register_WithValidData_ShouldSucceed followed by Login_WithValidCredentials_ShouldReturnToken).
+  Stack trace:    at SimulationTest.Tests.ApiTestBase.EnsureAuthenticatedAsync() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\ApiTestBase.cs:line 145
+   at SimulationTest.Tests.TradingServiceTests.CreateOrder_WithValidData_ShouldReturnOrder() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\TradingServiceTests.cs:line 72
+
+  Test: GetOrder_WithValidOrderId_ShouldReturnOrder
+  Description: Test getting an order with valid order ID
+  Start time: 2025-05-11 21:23:21.661
+  Retry attempt 1 of 3
+  Retry attempt 2 of 3
+  Result: FAILED
+  End time: 2025-05-11 21:23:21.664
+  Error: Exception occurred during test: No authentication token available. Tests must be properly sequenced to run identity tests first (Register_WithValidData_ShouldSucceed followed by Login_WithValidCredentials_ShouldReturnToken).
+  Stack trace:    at SimulationTest.Tests.ApiTestBase.EnsureAuthenticatedAsync() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\ApiTestBase.cs:line 145
+   at SimulationTest.Tests.TradingServiceTests.GetOrder_WithValidOrderId_ShouldReturnOrder() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\TradingServiceTests.cs:line 136
+
+  Test: GetOpenOrders_WhenAuthenticated_ShouldReturnOpenOrders
+  Description: Test getting open orders when authenticated
+  Start time: 2025-05-11 21:23:21.665
+  Retry attempt 1 of 3
+  Retry attempt 2 of 3
+  Result: FAILED
+  End time: 2025-05-11 21:23:21.667
+  Error: Exception occurred during test: No authentication token available. Tests must be properly sequenced to run identity tests first (Register_WithValidData_ShouldSucceed followed by Login_WithValidCredentials_ShouldReturnToken).
+  Stack trace:    at SimulationTest.Tests.ApiTestBase.EnsureAuthenticatedAsync() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\ApiTestBase.cs:line 145
+   at SimulationTest.Tests.TradingServiceTests.GetOpenOrders_WhenAuthenticated_ShouldReturnOpenOrders() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\TradingServiceTests.cs:line 215
+
+  Test: CancelOrder_WithValidOrderId_ShouldSucceed
+  Description: Test cancelling an order with valid order ID
+  Start time: 2025-05-11 21:23:21.668
+  Retry attempt 1 of 3
+  Retry attempt 2 of 3
+  Result: FAILED
+  End time: 2025-05-11 21:23:21.671
+  Error: Exception occurred during test: No authentication token available. Tests must be properly sequenced to run identity tests first (Register_WithValidData_ShouldSucceed followed by Login_WithValidCredentials_ShouldReturnToken).
+  Stack trace:    at SimulationTest.Tests.ApiTestBase.EnsureAuthenticatedAsync() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\ApiTestBase.cs:line 145
+   at SimulationTest.Tests.TradingServiceTests.CancelOrder_WithValidOrderId_ShouldSucceed() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\TradingServiceTests.cs:line 297
+
+  Test: GetOrderHistory_WhenAuthenticated_ShouldReturnOrderHistory
+  Description: Test getting order history when authenticated
+  Start time: 2025-05-11 21:23:21.672
+  Retry attempt 1 of 3
+  Retry attempt 2 of 3
+  Result: FAILED
+  End time: 2025-05-11 21:23:21.674
+  Error: Exception occurred during test: No authentication token available. Tests must be properly sequenced to run identity tests first (Register_WithValidData_ShouldSucceed followed by Login_WithValidCredentials_ShouldReturnToken).
+  Stack trace:    at SimulationTest.Tests.ApiTestBase.EnsureAuthenticatedAsync() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\ApiTestBase.cs:line 145
+   at SimulationTest.Tests.TradingServiceTests.GetOrderHistory_WhenAuthenticated_ShouldReturnOrderHistory() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\TradingServiceTests.cs:line 379
+
+  Test: GetTradeHistory_WhenAuthenticated_ShouldReturnTradeHistory
+  Description: Test getting trade history when authenticated
+  Start time: 2025-05-11 21:23:21.675
+  Retry attempt 1 of 3
+  Retry attempt 2 of 3
+  Result: FAILED
+  End time: 2025-05-11 21:23:21.678
+  Error: Exception occurred during test: No authentication token available. Tests must be properly sequenced to run identity tests first (Register_WithValidData_ShouldSucceed followed by Login_WithValidCredentials_ShouldReturnToken).
+  Stack trace:    at SimulationTest.Tests.ApiTestBase.EnsureAuthenticatedAsync() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\ApiTestBase.cs:line 145
+   at SimulationTest.Tests.TradingServiceTests.GetTradeHistory_WhenAuthenticated_ShouldReturnTradeHistory() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\TradingServiceTests.cs:line 425
+
+  Test: Register_WithValidData_ShouldSucceed
+  Description: Test registration with valid data
+  Start time: 2025-05-11 21:23:21.679
+  Retry attempt 1 of 3
+  Retry attempt 2 of 3
+  Result: FAILED
+  End time: 2025-05-11 21:23:21.948
+  Error: Exception occurred during test: Response status code does not indicate success: 400 (Bad Request).
+  Stack trace:    at System.Net.Http.HttpResponseMessage.EnsureSuccessStatusCode()
+   at SimulationTest.Tests.ApiTestBase.PostAsync[TRequest,TResponse](String serviceName, String endpoint, TRequest requestBody, Boolean requiresAuth) in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\ApiTestBase.cs:line 204
+   at SimulationTest.Tests.IdentityServiceTests.Register_WithValidData_ShouldSucceed() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\IdentityServiceTests.cs:line 89
+
+  Test: Login_WithValidCredentials_ShouldReturnToken
+  Description: Test login with valid credentials
+  Start time: 2025-05-11 21:23:21.949
+  Retry attempt 1 of 3
+  Retry attempt 2 of 3
+  Result: FAILED
+  End time: 2025-05-11 21:23:22.548
+  Error: Exception occurred during test: API request failed: 
+  Stack trace:    at SimulationTest.Tests.ApiTestBase.PostAsync[TRequest,TResponse](String serviceName, String endpoint, TRequest requestBody, Boolean requiresAuth) in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\ApiTestBase.cs:line 209
+   at SimulationTest.Tests.IdentityServiceTests.Login_WithValidCredentials_ShouldReturnToken() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\IdentityServiceTests.cs:line 150
+
+  Test: GetCurrentUser_WhenAuthenticated_ShouldReturnUserInfo
+  Description: Test getting current user when authenticated
+  Start time: 2025-05-11 21:23:22.548
+  Retry attempt 1 of 3
+  Retry attempt 2 of 3
+  Result: FAILED
+  End time: 2025-05-11 21:23:22.552
+  Error: Login test should have run first to obtain authentication token
+
+  Test: UpdateUser_WithValidData_ShouldSucceed
+  Description: Test updating user with valid data
+  Start time: 2025-05-11 21:23:22.552
+  Retry attempt 1 of 3
+  Retry attempt 2 of 3
+  Result: FAILED
+  End time: 2025-05-11 21:23:22.557
+  Error: Login test should have run first to obtain authentication token
+
+  Test: RefreshToken_WithValidToken_ShouldReturnNewToken
+  Description: Test refreshing a valid token
+  Start time: 2025-05-11 21:23:22.557
+  Retry attempt 1 of 3
+  Retry attempt 2 of 3
+  Result: FAILED
+  End time: 2025-05-11 21:23:22.562
+  Error: Login test should have run first to obtain authentication token
+
+  Test: GetBalances_WhenAuthenticated_ShouldReturnBalances
+  Description: Test getting account balances when authenticated
+  Start time: 2025-05-11 21:23:22.562
+  Retry attempt 1 of 3
+  Retry attempt 2 of 3
+  Result: FAILED
+  End time: 2025-05-11 21:23:22.565
+  Error: Exception occurred during test: No authentication token available. Tests must be properly sequenced to run identity tests first (Register_WithValidData_ShouldSucceed followed by Login_WithValidCredentials_ShouldReturnToken).
+  Stack trace:    at SimulationTest.Tests.ApiTestBase.EnsureAuthenticatedAsync() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\ApiTestBase.cs:line 145
+   at SimulationTest.Tests.AccountServiceTests.GetBalances_WhenAuthenticated_ShouldReturnBalances() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\AccountServiceTests.cs:line 66
+
+  Test: GetTransactions_WhenAuthenticated_ShouldReturnTransactions
+  Description: Test getting transactions when authenticated
+  Start time: 2025-05-11 21:23:22.566
+  Retry attempt 1 of 3
+  Retry attempt 2 of 3
+  Result: FAILED
+  End time: 2025-05-11 21:23:22.569
+  Error: Exception occurred during test: No authentication token available. Tests must be properly sequenced to run identity tests first (Register_WithValidData_ShouldSucceed followed by Login_WithValidCredentials_ShouldReturnToken).
+  Stack trace:    at SimulationTest.Tests.ApiTestBase.EnsureAuthenticatedAsync() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\ApiTestBase.cs:line 145
+   at SimulationTest.Tests.AccountServiceTests.GetTransactions_WhenAuthenticated_ShouldReturnTransactions() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\AccountServiceTests.cs:line 105
+
+  Test: CreateDeposit_WithValidData_ShouldSucceed
+  Description: Test creating a deposit when authenticated
+  Start time: 2025-05-11 21:23:22.570
+  Retry attempt 1 of 3
+  Retry attempt 2 of 3
+  Result: FAILED
+  End time: 2025-05-11 21:23:22.575
+  Error: Exception occurred during test: No authentication token available. Tests must be properly sequenced to run identity tests first (Register_WithValidData_ShouldSucceed followed by Login_WithValidCredentials_ShouldReturnToken).
+  Stack trace:    at SimulationTest.Tests.ApiTestBase.EnsureAuthenticatedAsync() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\ApiTestBase.cs:line 145
+   at SimulationTest.Tests.AccountServiceTests.CreateDeposit_WithValidData_ShouldSucceed() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\AccountServiceTests.cs:line 152
+
+  Test: GetAssets_WhenAuthenticated_ShouldReturnAssets
+  Description: Test getting assets when authenticated
+  Start time: 2025-05-11 21:23:22.576
+  Retry attempt 1 of 3
+  Retry attempt 2 of 3
+  Result: FAILED
+  End time: 2025-05-11 21:23:22.579
+  Error: Exception occurred during test: No authentication token available. Tests must be properly sequenced to run identity tests first (Register_WithValidData_ShouldSucceed followed by Login_WithValidCredentials_ShouldReturnToken).
+  Stack trace:    at SimulationTest.Tests.ApiTestBase.EnsureAuthenticatedAsync() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\ApiTestBase.cs:line 145
+   at SimulationTest.Tests.AccountServiceTests.GetAssets_WhenAuthenticated_ShouldReturnAssets() in C:\EggyByte\Coureses\Fudan\2025 spring\Paper\TradingSystem\backend\SimulationTest\Tests\AccountServiceTests.cs:line 394
+
