@@ -77,11 +77,16 @@ namespace SimulationTest
             services.AddScoped<ServiceConnectivityChecker>();
 
             // Configure JSON serialization options
-            services.AddSingleton(new System.Text.Json.JsonSerializerOptions
+            var jsonOptions = new System.Text.Json.JsonSerializerOptions
             {
                 PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
                 WriteIndented = true
-            });
+            };
+
+            // Add ObjectId converter for MongoDB BSON IDs
+            jsonOptions.Converters.Add(new CommonLib.Services.ObjectIdJsonConverter());
+
+            services.AddSingleton(jsonOptions);
         }
 
         private static void ShowMainMenu()
@@ -133,101 +138,157 @@ namespace SimulationTest
             AnsiConsole.Write(new Rule("[yellow]Running Stress Test[/]").RuleStyle("grey"));
             AnsiConsole.WriteLine();
 
-            // Create a single progress display to avoid concurrency issues
-            var progress = AnsiConsole.Progress()
-                .AutoClear(false)
-                .HideCompleted(false)
-                .Columns(new ProgressColumn[]
-                {
+            // Create a progress display that shows both progress and status
+            TestResult testResult = null;
+            string testFolderPath = null;
+            DateTime startTime = DateTime.Now;
+            StressTestRunner testRunner = null;
+
+            // Create a timestamp-based folder for this test run
+            string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            testFolderPath = Path.Combine("logs", $"stress_test_{timestamp}");
+            Directory.CreateDirectory(testFolderPath);
+
+            // Setup log file path (but don't open it here)
+            var logFileName = Path.Combine(testFolderPath, "test.log");
+
+            // Run the test with a simple progress display
+            await AnsiConsole.Progress()
+               .AutoClear(false)
+               .HideCompleted(false)
+               .Columns(new ProgressColumn[]
+               {
                     new TaskDescriptionColumn(),
                     new ProgressBarColumn(),
                     new PercentageColumn(),
-                    new RemainingTimeColumn(),
-                    new SpinnerColumn()
-                });
+                    new SpinnerColumn(),
+                    new ElapsedTimeColumn()
+               })
+               .StartAsync(async ctx =>
+               {
+                   // Create three tasks - the main progress task, a stats display task, and a logs display task
+                   var progressTask = ctx.AddTask("[yellow]Running Stress Test[/]", maxValue: 100);
+                   var statsTask = ctx.AddTask("[blue]Stats[/]", maxValue: 1);
+                   var logsTask = ctx.AddTask("[green]Logs[/]", maxValue: 1);
 
-            TestResult testResult = null;
+                   // Make the stats and logs tasks display as text only without progress indicators
+                   statsTask.IsIndeterminate = true;
+                   statsTask.Value = 0;
+                   statsTask.MaxValue = 0;
 
-            await progress.StartAsync(async ctx =>
+                   logsTask.IsIndeterminate = true;
+                   logsTask.Value = 0;
+                   logsTask.MaxValue = 0;
+
+                   try
+                   {
+                       // Create a progress handler that updates our progress bar and stats display
+                       var progressHandler = new Progress<TestProgress>(p =>
+                       {
+                           // Update progress bar
+                           if (p.Total > 0)
+                           {
+                               progressTask.MaxValue = p.Total;
+                               progressTask.Value = p.Completed;
+                               progressTask.Description = $"[yellow]{p.Message} ({p.Completed}/{p.Total})[/]";
+                           }
+                           else
+                           {
+                               progressTask.Value = p.Percentage;
+                               progressTask.Description = $"[yellow]{p.Message}[/]";
+                           }
+
+                           // Update stats display in the second progress task
+                           if (testRunner != null)
+                           {
+                               var elapsedTime = DateTime.Now - startTime;
+                               var completed = testRunner.GetCompletedOperations();
+                               var successRate = testRunner.GetCurrentSuccessRate();
+                               var latency = testRunner.GetCurrentAverageLatency();
+                               var ordersPerSecond = elapsedTime.TotalSeconds > 0 ? completed / elapsedTime.TotalSeconds : 0;
+
+                               // Update stats display with colored format
+                               statsTask.Description =
+                                   $"[blue]Completed:[/] [bold]{completed}[/] | " +
+                                   $"[green]Success:[/] [bold]{successRate:F2}%[/] | " +
+                                   $"[yellow]Latency:[/] [bold]{latency:F2} ms[/] | " +
+                                   $"[cyan]Rate:[/] [bold]{ordersPerSecond:F2}/sec[/]";
+                           }
+
+                           // If there's a message, update the logs display
+                           if (!string.IsNullOrEmpty(p.LogMessage))
+                           {
+                               var logMessage = $"[[{DateTime.Now:HH:mm:ss.fff}]] {p.LogMessage}";
+                               logsTask.Description = $"[green]{logMessage}[/]";
+                           }
+                       });
+
+                       // Update configuration
+                       var configOverrides = new Dictionary<string, string>
+                       {
+                           ["StressTestSettings:SimulationMode"] = simulationMode,
+                           ["StressTestSettings:TestFolderPath"] = testFolderPath,
+                           ["StressTestSettings:LogFile"] = logFileName
+                       };
+
+                       var config = new ConfigurationBuilder()
+                              .AddConfiguration(_configuration)
+                              .AddInMemoryCollection(configOverrides)
+                              .Build();
+
+                       startTime = DateTime.Now;
+
+                       // Create and run the stress test
+                       testRunner = new StressTestRunner(
+                              config,
+                              userCount,
+                              ordersPerUser,
+                              concurrency,
+                              timeoutSeconds,
+                              progressHandler);
+
+                       // Run the test
+                       testResult = await testRunner.RunAsync();
+                   }
+                   catch (Exception ex)
+                   {
+                       progressTask.Description = $"[red]Test failed: {ex.Message}[/]";
+                       statsTask.Description = $"[red]ERROR: {ex.Message}[/]";
+                       logsTask.Description = $"[red]ERROR: {ex.Message}[/]";
+
+                       testResult = new TestResult
+                       {
+                           Success = false,
+                           ErrorMessage = ex.Message,
+                           StartTime = DateTime.Now,
+                           EndTime = DateTime.Now,
+                           ElapsedTime = TimeSpan.Zero
+                       };
+                   }
+                   finally
+                   {
+                       progressTask.Value = progressTask.MaxValue;
+                       progressTask.Description = "[green]Test completed[/]";
+
+                       // Final stats update
+                       if (testResult != null && testResult.Success)
+                       {
+                           statsTask.Description = $"[green]Success: {testResult.TotalRequests} orders | " +
+                                  $"Success Rate: {(testResult.TotalRequests > 0 ? (double)testResult.SuccessfulRequests / testResult.TotalRequests * 100 : 0):F2}% | " +
+                                  $"Avg Latency: {testResult.AverageLatency.TotalMilliseconds:F2} ms[/]";
+                       }
+                       else if (testResult != null)
+                       {
+                           statsTask.Description = $"[red]Failed: {testResult.ErrorMessage}[/]";
+                       }
+                   }
+               });
+
+            // Store the test folder path for later use
+            if (testResult != null)
             {
-                var progressTask = ctx.AddTask("Running Stress Test", maxValue: 100);
-                string testFolderPath = null;
-
-                try
-                {
-                    // Create a timestamp-based folder for this test run
-                    string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                    testFolderPath = Path.Combine("logs", $"stress_test_{timestamp}");
-                    Directory.CreateDirectory(testFolderPath);
-
-                    // Create a progress handler that updates our single progress bar
-                    var progressHandler = new Progress<TestProgress>(p =>
-                    {
-                        progressTask.Value = p.Percentage;
-                        if (p.Total > 0)
-                        {
-                            progressTask.MaxValue = p.Total;
-                            progressTask.Value = p.Completed;
-                            // Escape square brackets to avoid markup parsing errors
-                            progressTask.Description = $"{p.Message} ({p.Completed}/{p.Total})";
-                        }
-                        else
-                        {
-                            progressTask.Description = p.Message;
-                        }
-                    });
-
-                    // Update configuration
-                    var configOverrides = new Dictionary<string, string>
-                    {
-                        ["StressTestSettings:SimulationMode"] = simulationMode,
-                        ["StressTestSettings:TestFolderPath"] = testFolderPath
-                    };
-
-                    var config = new ConfigurationBuilder()
-                        .AddConfiguration(_configuration)
-                        .AddInMemoryCollection(configOverrides)
-                        .Build();
-
-                    // Create and run the stress test
-                    var stressTestRunner = new StressTestRunner(
-                        config,
-                        userCount,
-                        ordersPerUser,
-                        concurrency,
-                        timeoutSeconds,
-                        progressHandler);
-
-                    // Run the test - prevent any prompts during execution
-                    testResult = await stressTestRunner.RunAsync();
-                }
-                catch (Exception ex)
-                {
-                    // Console output for error messages only, no interactive elements
-                    var errorMessage = $"Error: {ex.Message}";
-                    progressTask.Description = $"Test failed: {ex.Message}";
-
-                    testResult = new TestResult
-                    {
-                        Success = false,
-                        ErrorMessage = ex.Message,
-                        StartTime = DateTime.Now,
-                        EndTime = DateTime.Now,
-                        ElapsedTime = TimeSpan.Zero
-                    };
-                }
-                finally
-                {
-                    progressTask.Value = 100;
-                    progressTask.Description = "Test completed";
-                }
-
-                // Store the test folder path for later use
-                if (testResult != null)
-                {
-                    testResult.TestFolderPath = testFolderPath;
-                }
-            });
+                testResult.TestFolderPath = testFolderPath;
+            }
 
             // Display results
             if (testResult != null)
@@ -237,6 +298,9 @@ namespace SimulationTest
             }
         }
 
+        /// <summary>
+        /// Run unit tests on the system
+        /// </summary>
         private static async Task RunUnitTest()
         {
             Console.Clear();
@@ -277,6 +341,14 @@ namespace SimulationTest
             AnsiConsole.Write(new Rule("[yellow]Running Unit Tests[/]").RuleStyle("grey"));
             AnsiConsole.WriteLine();
 
+            // Create a timestamp-based folder for this test run
+            string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            string testFolderPath = Path.Combine("logs", $"unit_test_{timestamp}");
+            Directory.CreateDirectory(testFolderPath);
+
+            // Setup log file path (but don't open it here)
+            var logFileName = Path.Combine(testFolderPath, "test.log");
+
             // Configure unit test execution
             var testConfig = new Dictionary<string, string>
             {
@@ -286,7 +358,8 @@ namespace SimulationTest
                 ["TestSettings:RunMarketDataTests"] = testCategories["Market Data Service"].ToString(),
                 ["TestSettings:RunTradingTests"] = testCategories["Trading Service"].ToString(),
                 ["TestSettings:RunRiskTests"] = testCategories["Risk Service"].ToString(),
-                ["TestSettings:RunNotificationTests"] = testCategories["Notification Service"].ToString()
+                ["TestSettings:RunNotificationTests"] = testCategories["Notification Service"].ToString(),
+                ["TestSettings:LogFile"] = logFileName
             };
 
             var config = new ConfigurationBuilder()
@@ -294,18 +367,105 @@ namespace SimulationTest
                 .AddInMemoryCollection(testConfig)
                 .Build();
 
-            // Create progress UI
-            AnsiConsole.Status()
-                .Spinner(Spinner.Known.Dots)
-                .Start("Initializing unit tests...", async ctx =>
-                {
-                    var unitTestRunner = new UnitTestRunner(config);
-                    var results = await unitTestRunner.RunTestsAsync();
+            TestRunResults results = null;
 
-                    // Display results
-                    DisplayUnitTestResults(results);
-                    SaveUnitTestReport(results);
-                });
+            try
+            {
+                // Create progress UI with the same pattern as stress test
+                await AnsiConsole.Progress()
+                    .AutoClear(false)
+                    .HideCompleted(false)
+                    .Columns(new ProgressColumn[]
+                    {
+                        new TaskDescriptionColumn(),
+                        new ProgressBarColumn(),
+                        new PercentageColumn(),
+                        new SpinnerColumn(),
+                        new ElapsedTimeColumn()
+                    })
+                    .StartAsync(async ctx =>
+                    {
+                        // Create three tasks - the main progress task, a stats display task, and a logs display task
+                        var progressTask = ctx.AddTask("[yellow]Running Unit Tests[/]", maxValue: 100);
+                        var statsTask = ctx.AddTask("[blue]Stats[/]", maxValue: 1);
+                        var logsTask = ctx.AddTask("[green]Logs[/]", maxValue: 1);
+
+                        // Make the stats and logs tasks display as text only without progress indicators
+                        statsTask.IsIndeterminate = true;
+                        statsTask.Value = 0;
+                        statsTask.MaxValue = 0;
+
+                        logsTask.IsIndeterminate = true;
+                        logsTask.Value = 0;
+                        logsTask.MaxValue = 0;
+
+                        try
+                        {
+                            // Create a progress handler
+                            var progressHandler = new Progress<TestProgress>(p =>
+                            {
+                                // Update progress bar
+                                if (p.Total > 0)
+                                {
+                                    progressTask.MaxValue = p.Total;
+                                    progressTask.Value = p.Completed;
+                                    progressTask.Description = $"[yellow]{p.Message} ({p.Completed}/{p.Total})[/]";
+                                }
+                                else
+                                {
+                                    progressTask.Value = p.Percentage;
+                                    progressTask.Description = $"[yellow]{p.Message}[/]";
+                                }
+
+                                // Update stats display
+                                if (p.Passed >= 0 && p.Failed >= 0)
+                                {
+                                    int total = p.Passed + p.Failed + (p.Skipped >= 0 ? p.Skipped : 0);
+                                    double passRate = total > 0 ? (double)p.Passed / total * 100 : 0;
+
+                                    statsTask.Description =
+                                        $"[green]Passed:[/] [bold]{p.Passed}[/] | " +
+                                        $"[red]Failed:[/] [bold]{p.Failed}[/] | " +
+                                        $"[yellow]Skipped:[/] [bold]{p.Skipped}[/] | " +
+                                        $"[blue]Pass Rate:[/] [bold]{passRate:F2}%[/]";
+                                }
+
+                                // If there's a message, update the logs display
+                                if (!string.IsNullOrEmpty(p.LogMessage))
+                                {
+                                    var logMessage = $"[[{DateTime.Now:HH:mm:ss.fff}]] {p.LogMessage}";
+                                    logsTask.Description = $"[green]{logMessage}[/]";
+                                }
+                            });
+
+                            var unitTestRunner = new UnitTestRunner(config, progressHandler);
+                            results = await unitTestRunner.RunTestsAsync();
+                        }
+                        catch (Exception ex)
+                        {
+                            progressTask.Description = $"[red]Test failed: {ex.Message}[/]";
+                            statsTask.Description = $"[red]ERROR: {ex.Message}[/]";
+                            logsTask.Description = $"[red]ERROR: {ex.Message}[/]";
+                        }
+                        finally
+                        {
+                            progressTask.Value = progressTask.MaxValue;
+                            progressTask.Description = "[green]Tests completed[/]";
+                        }
+                    });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"ERROR: {ex.Message}");
+                Console.WriteLine(ex.StackTrace);
+            }
+
+            // Display results
+            if (results != null)
+            {
+                DisplayUnitTestResults(results);
+                SaveUnitTestReport(results, testFolderPath);
+            }
         }
 
         private static void DisplayTestResults(TestResult result)
@@ -342,8 +502,7 @@ namespace SimulationTest
                 ? (double)result.SuccessfulRequests / result.TotalRequests * 100
                 : 0;
 
-            return new Markup(
-                $"[bold]Success:[/] {(result.Success ? "[green]Yes[/]" : "[red]No[/]")}\n" +
+            return $"[bold]Success:[/] {(result.Success ? "[green]Yes[/]" : "[red]No[/]")}\n" +
                 (result.Success ? "" : $"[bold]Error:[/] [red]{result.ErrorMessage}[/]\n") +
                 $"[bold]Total Requests:[/] {result.TotalRequests}\n" +
                 $"[bold]Successful:[/] [green]{result.SuccessfulRequests}[/]\n" +
@@ -352,22 +511,19 @@ namespace SimulationTest
                 $"[bold]Start Time:[/] {result.StartTime:yyyy-MM-dd HH:mm:ss}\n" +
                 $"[bold]End Time:[/] {result.EndTime:yyyy-MM-dd HH:mm:ss}\n" +
                 $"[bold]Duration:[/] {result.ElapsedTime.TotalSeconds:F2} seconds\n" +
-                $"[bold]Orders/Second:[/] {result.OrdersPerSecond:F2}"
-            ).ToString();
+                $"[bold]Orders/Second:[/] {result.OrdersPerSecond:F2}";
         }
 
         private static string GetLatencyContent(TestResult result)
         {
-            return new Markup(
-                $"[bold]Average:[/] {result.AverageLatency.TotalMilliseconds:F2} ms\n" +
+            return $"[bold]Average:[/] {result.AverageLatency.TotalMilliseconds:F2} ms\n" +
                 $"[bold]Min:[/] {result.MinLatency.TotalMilliseconds:F2} ms\n" +
                 $"[bold]Max:[/] {result.MaxLatency.TotalMilliseconds:F2} ms\n" +
                 $"[bold]Percentiles:[/]\n" +
                 $"  50th: {(result.Percentiles.Count >= 1 ? result.Percentiles[0].ToString("F2") : "0")} ms\n" +
                 $"  90th: {(result.Percentiles.Count >= 2 ? result.Percentiles[1].ToString("F2") : "0")} ms\n" +
                 $"  95th: {(result.Percentiles.Count >= 3 ? result.Percentiles[2].ToString("F2") : "0")} ms\n" +
-                $"  99th: {(result.Percentiles.Count >= 4 ? result.Percentiles[3].ToString("F2") : "0")} ms"
-            ).ToString();
+                $"  99th: {(result.Percentiles.Count >= 4 ? result.Percentiles[3].ToString("F2") : "0")} ms";
         }
 
         private static void DisplayUnitTestResults(TestRunResults results)
@@ -463,11 +619,17 @@ namespace SimulationTest
 
                 string filename = Path.Combine(logDir, "report.txt");
 
-                // Write report to file
+                // Calculate success rate for easy access
+                double successRate = result.TotalRequests > 0
+                    ? (double)result.SuccessfulRequests / result.TotalRequests * 100
+                    : 0;
+
+                // Write text-only report to file
                 using (StreamWriter writer = new StreamWriter(filename))
                 {
                     writer.WriteLine($"=== {testType.ToUpper()} TEST REPORT ===");
                     writer.WriteLine($"Date/Time: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+                    writer.WriteLine();
                     writer.WriteLine($"Configuration:");
                     writer.WriteLine($"  User Count: {userCount}");
                     writer.WriteLine($"  Orders Per User: {ordersPerUser}");
@@ -483,7 +645,7 @@ namespace SimulationTest
                     writer.WriteLine($"  Total Requests: {result.TotalRequests}");
                     writer.WriteLine($"  Successful Requests: {result.SuccessfulRequests}");
                     writer.WriteLine($"  Failed Requests: {result.FailedRequests}");
-                    writer.WriteLine($"  Success Rate: {(result.TotalRequests > 0 ? (double)result.SuccessfulRequests / result.TotalRequests * 100 : 0):F2}%");
+                    writer.WriteLine($"  Success Rate: {successRate:F2}%");
                     writer.WriteLine($"  Start Time: {result.StartTime:yyyy-MM-dd HH:mm:ss}");
                     writer.WriteLine($"  End Time: {result.EndTime:yyyy-MM-dd HH:mm:ss}");
                     writer.WriteLine($"  Duration: {result.ElapsedTime.TotalSeconds:F2} seconds");
@@ -506,215 +668,8 @@ namespace SimulationTest
                 // Cleanup coverage directory
                 CleanupCoverageDirectory();
 
-                AnsiConsole.MarkupLine($"[green]Report saved to {filename}[/]");
-            }
-            catch (Exception ex)
-            {
-                AnsiConsole.MarkupLine($"[red]Error saving report: {ex.Message}[/]");
-            }
-        }
-
-        private static void SaveUnitTestReport(TestRunResults results)
-        {
-            try
-            {
-                // Create a timestamp for the filename and directory
-                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-
-                // Create a specific directory for this test run
-                string logDir = Path.Combine("logs", $"unit_test_{timestamp}");
-                Directory.CreateDirectory(logDir);
-
-                string filename = Path.Combine(logDir, "report.txt");
-                string htmlFilename = Path.Combine(logDir, "report.html");
-
-                // Calculate statistics
-                int totalTests = results.Total;
-                int passedTests = results.Passed;
-                int failedTests = results.Failed;
-                int skippedTests = results.Skipped;
-                double passRate = totalTests > 0 ? (double)passedTests / totalTests * 100 : 0;
-
-                // Calculate performance metrics
-                var avgTestDuration = results.TestLatencies.Count > 0
-                    ? TimeSpan.FromTicks((long)results.TestLatencies.Average(l => l.Ticks))
-                    : TimeSpan.Zero;
-                var minTestDuration = results.TestLatencies.Count > 0
-                    ? results.TestLatencies.Min()
-                    : TimeSpan.Zero;
-                var maxTestDuration = results.TestLatencies.Count > 0
-                    ? results.TestLatencies.Max()
-                    : TimeSpan.Zero;
-                var testsPerSecond = results.Elapsed.TotalSeconds > 0
-                    ? totalTests / results.Elapsed.TotalSeconds
-                    : 0;
-
-                // Write text report to file
-                using (StreamWriter writer = new StreamWriter(filename))
-                {
-                    writer.WriteLine("=== UNIT TEST REPORT ===");
-                    writer.WriteLine($"Date/Time: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-                    writer.WriteLine();
-                    writer.WriteLine("Summary:");
-                    writer.WriteLine($"  Total Tests: {totalTests}");
-                    writer.WriteLine($"  Passed: {passedTests}");
-                    writer.WriteLine($"  Failed: {failedTests}");
-                    writer.WriteLine($"  Skipped: {skippedTests}");
-                    writer.WriteLine($"  Pass Rate: {passRate:F2}%");
-                    writer.WriteLine($"  Duration: {results.Elapsed.TotalSeconds:F2} seconds");
-                    writer.WriteLine();
-                    writer.WriteLine("Performance Metrics:");
-                    writer.WriteLine($"  Average Test Duration: {avgTestDuration.TotalMilliseconds:F2} ms");
-                    writer.WriteLine($"  Min Test Duration: {minTestDuration.TotalMilliseconds:F2} ms");
-                    writer.WriteLine($"  Max Test Duration: {maxTestDuration.TotalMilliseconds:F2} ms");
-                    writer.WriteLine($"  Tests Per Second: {testsPerSecond:F2}");
-                }
-
-                // Generate HTML report with styling
-                using (StreamWriter writer = new StreamWriter(htmlFilename))
-                {
-                    writer.WriteLine("<!DOCTYPE html>");
-                    writer.WriteLine("<html lang=\"en\">");
-                    writer.WriteLine("<head>");
-                    writer.WriteLine("  <meta charset=\"UTF-8\">");
-                    writer.WriteLine("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">");
-                    writer.WriteLine("  <title>Unit Test Report</title>");
-                    writer.WriteLine("  <style>");
-                    writer.WriteLine("    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; color: #333; }");
-                    writer.WriteLine("    .container { max-width: 1000px; margin: 0 auto; background-color: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }");
-                    writer.WriteLine("    h1 { color: #0066cc; text-align: center; margin-bottom: 30px; }");
-                    writer.WriteLine("    h2 { color: #0066cc; margin-top: 30px; border-bottom: 1px solid #eee; padding-bottom: 10px; }");
-                    writer.WriteLine("    .summary-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin-bottom: 30px; }");
-                    writer.WriteLine("    .card { background-color: white; border-radius: 8px; padding: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }");
-                    writer.WriteLine("    .card h3 { margin-top: 0; color: #555; }");
-                    writer.WriteLine("    .stat { display: flex; justify-content: space-between; margin-bottom: 10px; }");
-                    writer.WriteLine("    .label { font-weight: bold; }");
-                    writer.WriteLine("    .value { }");
-                    writer.WriteLine("    .value.success { color: #28a745; font-weight: bold; }");
-                    writer.WriteLine("    .value.warning { color: #ffc107; font-weight: bold; }");
-                    writer.WriteLine("    .value.danger { color: #dc3545; font-weight: bold; }");
-                    writer.WriteLine("    .value.info { color: #17a2b8; font-weight: bold; }");
-                    writer.WriteLine("    .chart-container { width: 100%; height: 300px; margin-top: 20px; }");
-                    writer.WriteLine("    footer { text-align: center; margin-top: 30px; font-size: 0.8em; color: #777; }");
-                    writer.WriteLine("  </style>");
-                    writer.WriteLine("  <script src=\"https://cdn.jsdelivr.net/npm/chart.js\"></script>");
-                    writer.WriteLine("</head>");
-                    writer.WriteLine("<body>");
-                    writer.WriteLine("  <div class=\"container\">");
-                    writer.WriteLine($"    <h1>Unit Test Report</h1>");
-                    writer.WriteLine($"    <p style=\"text-align: center; color: #666;\">Generated on {DateTime.Now:yyyy-MM-dd HH:mm:ss}</p>");
-
-                    // Summary Section
-                    writer.WriteLine("    <h2>Test Summary</h2>");
-                    writer.WriteLine("    <div class=\"summary-grid\">");
-
-                    // Results Card
-                    writer.WriteLine("      <div class=\"card\">");
-                    writer.WriteLine("        <h3>Results</h3>");
-                    writer.WriteLine("        <div class=\"stat\">");
-                    writer.WriteLine("          <span class=\"label\">Total Tests:</span>");
-                    writer.WriteLine($"          <span class=\"value info\">{totalTests}</span>");
-                    writer.WriteLine("        </div>");
-                    writer.WriteLine("        <div class=\"stat\">");
-                    writer.WriteLine("          <span class=\"label\">Passed:</span>");
-                    writer.WriteLine($"          <span class=\"value success\">{passedTests}</span>");
-                    writer.WriteLine("        </div>");
-                    writer.WriteLine("        <div class=\"stat\">");
-                    writer.WriteLine("          <span class=\"label\">Failed:</span>");
-                    writer.WriteLine($"          <span class=\"value danger\">{failedTests}</span>");
-                    writer.WriteLine("        </div>");
-                    writer.WriteLine("        <div class=\"stat\">");
-                    writer.WriteLine("          <span class=\"label\">Skipped:</span>");
-                    writer.WriteLine($"          <span class=\"value warning\">{skippedTests}</span>");
-                    writer.WriteLine("        </div>");
-                    writer.WriteLine("        <div class=\"stat\">");
-                    writer.WriteLine("          <span class=\"label\">Pass Rate:</span>");
-                    writer.WriteLine($"          <span class=\"value {(passRate >= 90 ? "success" : passRate >= 70 ? "warning" : "danger")}\">{passRate:F2}%</span>");
-                    writer.WriteLine("        </div>");
-                    writer.WriteLine("        <div class=\"stat\">");
-                    writer.WriteLine("          <span class=\"label\">Duration:</span>");
-                    writer.WriteLine($"          <span class=\"value\">{results.Elapsed.TotalSeconds:F2} seconds</span>");
-                    writer.WriteLine("        </div>");
-                    writer.WriteLine("      </div>");
-
-                    // Performance Card
-                    writer.WriteLine("      <div class=\"card\">");
-                    writer.WriteLine("        <h3>Performance Metrics</h3>");
-                    writer.WriteLine("        <div class=\"stat\">");
-                    writer.WriteLine("          <span class=\"label\">Average Duration:</span>");
-                    writer.WriteLine($"          <span class=\"value\">{avgTestDuration.TotalMilliseconds:F2} ms</span>");
-                    writer.WriteLine("        </div>");
-                    writer.WriteLine("        <div class=\"stat\">");
-                    writer.WriteLine("          <span class=\"label\">Min Duration:</span>");
-                    writer.WriteLine($"          <span class=\"value\">{minTestDuration.TotalMilliseconds:F2} ms</span>");
-                    writer.WriteLine("        </div>");
-                    writer.WriteLine("        <div class=\"stat\">");
-                    writer.WriteLine("          <span class=\"label\">Max Duration:</span>");
-                    writer.WriteLine($"          <span class=\"value\">{maxTestDuration.TotalMilliseconds:F2} ms</span>");
-                    writer.WriteLine("        </div>");
-                    writer.WriteLine("        <div class=\"stat\">");
-                    writer.WriteLine("          <span class=\"label\">Tests Per Second:</span>");
-                    writer.WriteLine($"          <span class=\"value info\">{testsPerSecond:F2}</span>");
-                    writer.WriteLine("        </div>");
-                    writer.WriteLine("      </div>");
-                    writer.WriteLine("    </div>");
-
-                    // Charts Section
-                    writer.WriteLine("    <h2>Visualization</h2>");
-                    writer.WriteLine("    <div class=\"chart-container\">");
-                    writer.WriteLine("      <canvas id=\"resultsChart\"></canvas>");
-                    writer.WriteLine("    </div>");
-
-                    // Footer
-                    writer.WriteLine("    <footer>");
-                    writer.WriteLine("      <p>Trading System Test Framework</p>");
-                    writer.WriteLine("    </footer>");
-                    writer.WriteLine("  </div>");
-
-                    // JavaScript for charts
-                    writer.WriteLine("  <script>");
-                    writer.WriteLine("    document.addEventListener('DOMContentLoaded', function() {");
-                    writer.WriteLine("      // Test Results Chart");
-                    writer.WriteLine("      var ctx = document.getElementById('resultsChart').getContext('2d');");
-                    writer.WriteLine("      new Chart(ctx, {");
-                    writer.WriteLine("        type: 'pie',");
-                    writer.WriteLine("        data: {");
-                    writer.WriteLine("          labels: ['Passed', 'Failed', 'Skipped'],");
-                    writer.WriteLine("          datasets: [{");
-                    writer.WriteLine("            data: [" + passedTests + ", " + failedTests + ", " + skippedTests + "],");
-                    writer.WriteLine("            backgroundColor: ['#28a745', '#dc3545', '#ffc107'],");
-                    writer.WriteLine("            borderWidth: 1");
-                    writer.WriteLine("          }]");
-                    writer.WriteLine("        },");
-                    writer.WriteLine("        options: {");
-                    writer.WriteLine("          responsive: true,");
-                    writer.WriteLine("          maintainAspectRatio: false,");
-                    writer.WriteLine("          plugins: {");
-                    writer.WriteLine("            legend: {");
-                    writer.WriteLine("              position: 'right'");
-                    writer.WriteLine("            },");
-                    writer.WriteLine("            title: {");
-                    writer.WriteLine("              display: true,");
-                    writer.WriteLine("              text: 'Test Results'");
-                    writer.WriteLine("            }");
-                    writer.WriteLine("          }");
-                    writer.WriteLine("        }");
-                    writer.WriteLine("      });");
-                    writer.WriteLine("    });");
-                    writer.WriteLine("  </script>");
-                    writer.WriteLine("</body>");
-                    writer.WriteLine("</html>");
-                }
-
-                // Move any other related logs to this directory
-                TryMoveRelatedLogs(timestamp, logDir);
-
-                // Cleanup coverage directory
-                CleanupCoverageDirectory();
-
-                AnsiConsole.MarkupLine($"[green]Reports saved to:[/]");
+                AnsiConsole.MarkupLine($"[green]Report saved to:[/]");
                 AnsiConsole.MarkupLine($"[green]- {filename}[/]");
-                AnsiConsole.MarkupLine($"[green]- {htmlFilename}[/]");
             }
             catch (Exception ex)
             {
@@ -769,6 +724,85 @@ namespace SimulationTest
             catch (Exception ex)
             {
                 Console.WriteLine($"Warning: Could not clean up coverage directory: {ex.Message}");
+            }
+        }
+
+        private static void SaveUnitTestReport(TestRunResults results, string testFolderPath = null)
+        {
+            try
+            {
+                // Use the provided test folder path if available, otherwise create a new one
+                string logDir;
+                if (!string.IsNullOrEmpty(testFolderPath) && Directory.Exists(testFolderPath))
+                {
+                    logDir = testFolderPath;
+                }
+                else
+                {
+                    // Create a timestamp for the filename and directory
+                    string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+
+                    // Create a specific directory for this test run
+                    logDir = Path.Combine("logs", $"unit_test_{timestamp}");
+                    Directory.CreateDirectory(logDir);
+                }
+
+                string filename = Path.Combine(logDir, "report.txt");
+
+                // Calculate statistics
+                int totalTests = results.Total;
+                int passedTests = results.Passed;
+                int failedTests = results.Failed;
+                int skippedTests = results.Skipped;
+                double passRate = totalTests > 0 ? (double)passedTests / totalTests * 100 : 0;
+
+                // Calculate performance metrics
+                var avgTestDuration = results.TestLatencies.Count > 0
+                    ? TimeSpan.FromTicks((long)results.TestLatencies.Average(l => l.Ticks))
+                    : TimeSpan.Zero;
+                var minTestDuration = results.TestLatencies.Count > 0
+                    ? results.TestLatencies.Min()
+                    : TimeSpan.Zero;
+                var maxTestDuration = results.TestLatencies.Count > 0
+                    ? results.TestLatencies.Max()
+                    : TimeSpan.Zero;
+                var testsPerSecond = results.Elapsed.TotalSeconds > 0
+                    ? totalTests / results.Elapsed.TotalSeconds
+                    : 0;
+
+                // Write text report to file
+                using (StreamWriter writer = new StreamWriter(filename))
+                {
+                    writer.WriteLine("=== UNIT TEST REPORT ===");
+                    writer.WriteLine($"Date/Time: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+                    writer.WriteLine();
+                    writer.WriteLine("Summary:");
+                    writer.WriteLine($"  Total Tests: {totalTests}");
+                    writer.WriteLine($"  Passed: {passedTests}");
+                    writer.WriteLine($"  Failed: {failedTests}");
+                    writer.WriteLine($"  Skipped: {skippedTests}");
+                    writer.WriteLine($"  Pass Rate: {passRate:F2}%");
+                    writer.WriteLine($"  Duration: {results.Elapsed.TotalSeconds:F2} seconds");
+                    writer.WriteLine();
+                    writer.WriteLine("Performance Metrics:");
+                    writer.WriteLine($"  Average Test Duration: {avgTestDuration.TotalMilliseconds:F2} ms");
+                    writer.WriteLine($"  Min Test Duration: {minTestDuration.TotalMilliseconds:F2} ms");
+                    writer.WriteLine($"  Max Test Duration: {maxTestDuration.TotalMilliseconds:F2} ms");
+                    writer.WriteLine($"  Tests Per Second: {testsPerSecond:F2}");
+                }
+
+                // Move any other related logs to this directory
+                TryMoveRelatedLogs(Path.GetFileName(logDir), logDir);
+
+                // Cleanup coverage directory
+                CleanupCoverageDirectory();
+
+                AnsiConsole.MarkupLine($"[green]Report saved to:[/]");
+                AnsiConsole.MarkupLine($"[green]- {filename}[/]");
+            }
+            catch (Exception ex)
+            {
+                AnsiConsole.MarkupLine($"[red]Error saving report: {ex.Message}[/]");
             }
         }
     }

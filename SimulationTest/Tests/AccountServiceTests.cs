@@ -48,11 +48,12 @@ namespace SimulationTest.Tests
 
                 if (response.IsSuccessStatusCode)
                 {
-                    return ApiTestResult.Passed(stopwatch.Elapsed);
+                    return ApiTestResult.Passed(nameof(CheckConnectivity_AccountService_ShouldBeAccessible), stopwatch.Elapsed);
                 }
                 else
                 {
                     return ApiTestResult.Failed(
+                        nameof(CheckConnectivity_AccountService_ShouldBeAccessible),
                         $"Failed to connect to Account Service. Status code: {response.StatusCode}",
                         null,
                         stopwatch.Elapsed);
@@ -61,7 +62,11 @@ namespace SimulationTest.Tests
             catch (Exception ex)
             {
                 stopwatch.Stop();
-                return ApiTestResult.Failed($"Exception while connecting to Account Service: {ex.Message}", ex, stopwatch.Elapsed);
+                return ApiTestResult.Failed(
+                    nameof(CheckConnectivity_AccountService_ShouldBeAccessible),
+                    $"Exception while connecting to Account Service: {ex.Message}",
+                    ex,
+                    stopwatch.Elapsed);
             }
         }
 
@@ -85,7 +90,11 @@ namespace SimulationTest.Tests
                 // Check if the balances collection exists
                 if (balances == null)
                 {
-                    return ApiTestResult.Failed("Balance response is null", null, stopwatch.Elapsed);
+                    return ApiTestResult.Failed(
+                        nameof(GetBalances_WhenAuthenticated_ShouldReturnBalances),
+                        "Balance response is null",
+                        null,
+                        stopwatch.Elapsed);
                 }
 
                 // Assert - Using ApiResponseValidator
@@ -96,12 +105,16 @@ namespace SimulationTest.Tests
                 }
 
                 // Empty balances is still valid - just return the test as passed
-                return ApiTestResult.Passed(stopwatch.Elapsed);
+                return ApiTestResult.Passed(nameof(GetBalances_WhenAuthenticated_ShouldReturnBalances), stopwatch.Elapsed);
             }
             catch (Exception ex)
             {
                 stopwatch.Stop();
-                return ApiTestResult.Failed($"Exception occurred during test: {ex.Message}", ex, stopwatch.Elapsed);
+                return ApiTestResult.Failed(
+                    nameof(GetBalances_WhenAuthenticated_ShouldReturnBalances),
+                    $"Exception occurred during test: {ex.Message}",
+                    ex,
+                    stopwatch.Elapsed);
             }
         }
 
@@ -128,7 +141,11 @@ namespace SimulationTest.Tests
             catch (Exception ex)
             {
                 stopwatch.Stop();
-                return ApiTestResult.Failed($"Exception occurred during test: {ex.Message}", ex, stopwatch.Elapsed);
+                return ApiTestResult.Failed(
+                    nameof(GetTransactions_WhenAuthenticated_ShouldReturnTransactions),
+                    $"Exception occurred during test: {ex.Message}",
+                    ex,
+                    stopwatch.Elapsed);
             }
         }
 
@@ -164,6 +181,7 @@ namespace SimulationTest.Tests
                 if (!response.IsSuccessStatusCode)
                 {
                     return ApiTestResult.Failed(
+                        nameof(CreateDeposit_WithValidData_ShouldSucceed),
                         $"Failed to create deposit. Status code: {response.StatusCode}",
                         null,
                         stopwatch.Elapsed);
@@ -200,7 +218,7 @@ namespace SimulationTest.Tests
                         amount == transaction.Amount &&
                         (type == "Deposit" || type == "deposit"))
                     {
-                        return ApiTestResult.Passed(stopwatch.Elapsed);
+                        return ApiTestResult.Passed(nameof(CreateDeposit_WithValidData_ShouldSucceed), stopwatch.Elapsed);
                     }
 
                     // Try to look for data wrapper
@@ -226,12 +244,13 @@ namespace SimulationTest.Tests
                             amount == transaction.Amount &&
                             (type == "Deposit" || type == "deposit"))
                         {
-                            return ApiTestResult.Passed(stopwatch.Elapsed);
+                            return ApiTestResult.Passed(nameof(CreateDeposit_WithValidData_ShouldSucceed), stopwatch.Elapsed);
                         }
                     }
 
                     // If we couldn't find matching values, return failure
                     return ApiTestResult.Failed(
+                        nameof(CreateDeposit_WithValidData_ShouldSucceed),
                         $"Response values did not match expected values. Asset: {asset}, Amount: {amount}, Type: {type}",
                         null,
                         stopwatch.Elapsed);
@@ -239,6 +258,7 @@ namespace SimulationTest.Tests
                 catch (Exception ex)
                 {
                     return ApiTestResult.Failed(
+                        nameof(CreateDeposit_WithValidData_ShouldSucceed),
                         $"Failed to parse response: {ex.Message}",
                         ex,
                         stopwatch.Elapsed);
@@ -247,7 +267,11 @@ namespace SimulationTest.Tests
             catch (Exception ex)
             {
                 stopwatch.Stop();
-                return ApiTestResult.Failed($"Exception occurred during test: {ex.Message}", ex, stopwatch.Elapsed);
+                return ApiTestResult.Failed(
+                    nameof(CreateDeposit_WithValidData_ShouldSucceed),
+                    $"Exception occurred during test: {ex.Message}",
+                    ex,
+                    stopwatch.Elapsed);
             }
         }
 
@@ -280,6 +304,7 @@ namespace SimulationTest.Tests
                 if (!depositResponse.IsSuccessStatusCode)
                 {
                     return ApiTestResult.Failed(
+                        nameof(CreateWithdrawal_WithValidData_ShouldSucceed),
                         $"Failed to create deposit for test setup. Status: {depositResponse.StatusCode}",
                         null,
                         stopwatch.Elapsed);
@@ -303,6 +328,7 @@ namespace SimulationTest.Tests
                 if (!withdrawalResponse.IsSuccessStatusCode)
                 {
                     return ApiTestResult.Failed(
+                        nameof(CreateWithdrawal_WithValidData_ShouldSucceed),
                         $"Failed to create withdrawal. Status: {withdrawalResponse.StatusCode}",
                         null,
                         stopwatch.Elapsed);
@@ -317,7 +343,7 @@ namespace SimulationTest.Tests
                     // Look for withdrawalId in root
                     if (root.TryGetProperty("withdrawalId", out var idProp) && !string.IsNullOrEmpty(idProp.GetString()))
                     {
-                        return ApiTestResult.Passed(stopwatch.Elapsed);
+                        return ApiTestResult.Passed(nameof(CreateWithdrawal_WithValidData_ShouldSucceed), stopwatch.Elapsed);
                     }
 
                     // Try to look for data wrapper
@@ -325,17 +351,18 @@ namespace SimulationTest.Tests
                     {
                         if (dataProp.TryGetProperty("withdrawalId", out idProp) && !string.IsNullOrEmpty(idProp.GetString()))
                         {
-                            return ApiTestResult.Passed(stopwatch.Elapsed);
+                            return ApiTestResult.Passed(nameof(CreateWithdrawal_WithValidData_ShouldSucceed), stopwatch.Elapsed);
                         }
                     }
 
                     // Look for general id fields
                     if (root.TryGetProperty("id", out idProp) && !string.IsNullOrEmpty(idProp.GetString()))
                     {
-                        return ApiTestResult.Passed(stopwatch.Elapsed);
+                        return ApiTestResult.Passed(nameof(CreateWithdrawal_WithValidData_ShouldSucceed), stopwatch.Elapsed);
                     }
 
                     return ApiTestResult.Failed(
+                        nameof(CreateWithdrawal_WithValidData_ShouldSucceed),
                         "Withdrawal response did not contain expected ID field",
                         null,
                         stopwatch.Elapsed);
@@ -343,6 +370,7 @@ namespace SimulationTest.Tests
                 catch (Exception ex)
                 {
                     return ApiTestResult.Failed(
+                        nameof(CreateWithdrawal_WithValidData_ShouldSucceed),
                         $"Failed to parse withdrawal response: {ex.Message}",
                         ex,
                         stopwatch.Elapsed);
@@ -351,7 +379,11 @@ namespace SimulationTest.Tests
             catch (Exception ex)
             {
                 stopwatch.Stop();
-                return ApiTestResult.Failed($"Exception occurred during test: {ex.Message}", ex, stopwatch.Elapsed);
+                return ApiTestResult.Failed(
+                    nameof(CreateWithdrawal_WithValidData_ShouldSucceed),
+                    $"Exception occurred during test: {ex.Message}",
+                    ex,
+                    stopwatch.Elapsed);
             }
         }
 
@@ -384,6 +416,7 @@ namespace SimulationTest.Tests
                 if (!depositResponse.IsSuccessStatusCode)
                 {
                     return ApiTestResult.Failed(
+                        nameof(GetWithdrawalStatus_WithValidId_ShouldReturnWithdrawal),
                         $"Failed to create deposit for test setup. Status: {depositResponse.StatusCode}",
                         null,
                         stopwatch.Elapsed);
@@ -407,6 +440,7 @@ namespace SimulationTest.Tests
                 if (!withdrawalResponse.IsSuccessStatusCode)
                 {
                     return ApiTestResult.Failed(
+                        nameof(GetWithdrawalStatus_WithValidId_ShouldReturnWithdrawal),
                         $"Failed to create withdrawal for test setup. Status: {withdrawalResponse.StatusCode}",
                         null,
                         stopwatch.Elapsed);
@@ -438,6 +472,7 @@ namespace SimulationTest.Tests
                 catch (Exception ex)
                 {
                     return ApiTestResult.Failed(
+                        nameof(GetWithdrawalStatus_WithValidId_ShouldReturnWithdrawal),
                         $"Failed to extract withdrawal ID: {ex.Message}",
                         ex,
                         stopwatch.Elapsed);
@@ -446,6 +481,7 @@ namespace SimulationTest.Tests
                 if (string.IsNullOrEmpty(withdrawalId))
                 {
                     return ApiTestResult.Failed(
+                        nameof(GetWithdrawalStatus_WithValidId_ShouldReturnWithdrawal),
                         "Could not extract withdrawal ID from response",
                         null,
                         stopwatch.Elapsed);
@@ -465,22 +501,27 @@ namespace SimulationTest.Tests
                     if ((int)getResponse.StatusCode == 404)
                     {
                         Console.WriteLine("Withdrawal not found - this could be normal in test environment");
-                        return ApiTestResult.Passed(stopwatch.Elapsed);
+                        return ApiTestResult.Passed(nameof(GetWithdrawalStatus_WithValidId_ShouldReturnWithdrawal), stopwatch.Elapsed);
                     }
 
                     return ApiTestResult.Failed(
+                        nameof(GetWithdrawalStatus_WithValidId_ShouldReturnWithdrawal),
                         $"Failed to get withdrawal. Status: {getResponse.StatusCode}",
                         null,
                         stopwatch.Elapsed);
                 }
 
                 // Success - we got some response
-                return ApiTestResult.Passed(stopwatch.Elapsed);
+                return ApiTestResult.Passed(nameof(GetWithdrawalStatus_WithValidId_ShouldReturnWithdrawal), stopwatch.Elapsed);
             }
             catch (Exception ex)
             {
                 stopwatch.Stop();
-                return ApiTestResult.Failed($"Exception occurred during test: {ex.Message}", ex, stopwatch.Elapsed);
+                return ApiTestResult.Failed(
+                    nameof(GetWithdrawalStatus_WithValidId_ShouldReturnWithdrawal),
+                    $"Exception occurred during test: {ex.Message}",
+                    ex,
+                    stopwatch.Elapsed);
             }
         }
 
@@ -507,7 +548,11 @@ namespace SimulationTest.Tests
             catch (Exception ex)
             {
                 stopwatch.Stop();
-                return ApiTestResult.Failed($"Exception occurred during test: {ex.Message}", ex, stopwatch.Elapsed);
+                return ApiTestResult.Failed(
+                    nameof(GetAssets_WhenAuthenticated_ShouldReturnAssets),
+                    $"Exception occurred during test: {ex.Message}",
+                    ex,
+                    stopwatch.Elapsed);
             }
         }
     }

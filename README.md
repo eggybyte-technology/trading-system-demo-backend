@@ -112,16 +112,16 @@ CommonLib/
 
 ## 📚 API Documentation
 
-Each service exposes a Swagger UI endpoint at `/swagger` when running:
+Each service exposes a Swagger UI endpoint at `/` when running:
 
 | Service | Swagger URL |
 |---------|-------------|
-| IdentityService | http://localhost:5001/swagger |
-| AccountService | http://localhost:5002/swagger |
-| MarketDataService | http://localhost:5003/swagger |
-| TradingService | http://localhost:5004/swagger |
-| RiskService | http://localhost:5005/swagger |
-| NotificationService | http://localhost:5006/swagger |
+| IdentityService | http://localhost:5001/ |
+| AccountService | http://localhost:5002/ |
+| MarketDataService | http://localhost:5003/ |
+| TradingService | http://localhost:5004/ |
+| RiskService | http://localhost:5005/ |
+| NotificationService | http://localhost:5006/ |
 
 ## 📏 Development Standards
 

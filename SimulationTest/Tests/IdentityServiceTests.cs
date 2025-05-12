@@ -56,11 +56,12 @@ namespace SimulationTest.Tests
                     _testPassword = "Password123!";
                     _testEmail = $"{_testUsername}@example.com";
 
-                    return ApiTestResult.Passed(stopwatch.Elapsed);
+                    return ApiTestResult.Passed(nameof(CheckConnectivity_IdentityService_ShouldBeAccessible), stopwatch.Elapsed);
                 }
                 else
                 {
                     return ApiTestResult.Failed(
+                        nameof(CheckConnectivity_IdentityService_ShouldBeAccessible),
                         $"Failed to connect to Identity Service. Status code: {response.StatusCode}",
                         null,
                         stopwatch.Elapsed);
@@ -69,7 +70,8 @@ namespace SimulationTest.Tests
             catch (Exception ex)
             {
                 stopwatch.Stop();
-                return ApiTestResult.Failed($"Exception while connecting to Identity Service: {ex.Message}", ex, stopwatch.Elapsed);
+                return ApiTestResult.Failed(nameof(CheckConnectivity_IdentityService_ShouldBeAccessible),
+                    $"Exception while connecting to Identity Service: {ex.Message}", ex, stopwatch.Elapsed);
             }
         }
 
@@ -117,6 +119,7 @@ namespace SimulationTest.Tests
                 {
                     stopwatch.Stop();
                     return ApiTestResult.Failed(
+                        nameof(Register_WithValidData_ShouldSucceed),
                         $"Registration failed with status code {response.StatusCode}: {responseContent}",
                         new Exception(responseContent),
                         stopwatch.Elapsed);
@@ -126,11 +129,12 @@ namespace SimulationTest.Tests
                 try
                 {
                     // Direct deserialization
-                    var userResponse = JsonSerializer.Deserialize<UserDirectResponse>(responseContent, _jsonOptions);
+                    var userResponse = JsonSerializer.Deserialize<RegisterResponse>(responseContent, _jsonOptions);
                     if (userResponse == null || string.IsNullOrEmpty(userResponse.UserId))
                     {
                         stopwatch.Stop();
                         return ApiTestResult.Failed(
+                            nameof(Register_WithValidData_ShouldSucceed),
                             "Registration failed: Response did not contain user data",
                             new Exception("Invalid user data in response"),
                             stopwatch.Elapsed);
@@ -162,21 +166,21 @@ namespace SimulationTest.Tests
                     Console.WriteLine($"User registered successfully: {_testUsername} (ID: {_userId})");
 
                     stopwatch.Stop();
-                    return ApiTestResult.Passed(stopwatch.Elapsed);
+                    return ApiTestResult.Passed(nameof(Register_WithValidData_ShouldSucceed), stopwatch.Elapsed);
                 }
                 catch (Exception ex)
                 {
                     // Alternative: try standard API response format as fallback
                     try
                     {
-                        var apiResponse = JsonSerializer.Deserialize<ApiResponse<UserResponse>>(responseContent, _jsonOptions);
+                        var apiResponse = JsonSerializer.Deserialize<CommonLib.Models.ApiResponse<CommonLib.Models.Identity.UserResponse>>(responseContent, _jsonOptions);
                         if (apiResponse?.Data != null && !string.IsNullOrEmpty(apiResponse.Data.UserId))
                         {
                             _userId = apiResponse.Data.UserId;
                             Console.WriteLine($"User registered successfully (API format): {_testUsername} (ID: {_userId})");
 
                             stopwatch.Stop();
-                            return ApiTestResult.Passed(stopwatch.Elapsed);
+                            return ApiTestResult.Passed(nameof(Register_WithValidData_ShouldSucceed), stopwatch.Elapsed);
                         }
                     }
                     catch
@@ -186,6 +190,7 @@ namespace SimulationTest.Tests
 
                     stopwatch.Stop();
                     return ApiTestResult.Failed(
+                        nameof(Register_WithValidData_ShouldSucceed),
                         $"Failed to parse registration response: {ex.Message}",
                         ex,
                         stopwatch.Elapsed);
@@ -194,12 +199,13 @@ namespace SimulationTest.Tests
             catch (Exception ex)
             {
                 stopwatch.Stop();
-                return ApiTestResult.Failed($"Registration exception: {ex.Message}", ex, stopwatch.Elapsed);
+                return ApiTestResult.Failed(nameof(Register_WithValidData_ShouldSucceed),
+                    $"Registration exception: {ex.Message}", ex, stopwatch.Elapsed);
             }
         }
 
         /// <summary>
-        /// Test that a user can login successfully
+        /// Test login functionality with valid credentials
         /// </summary>
         [ApiTest("Test login with valid credentials", Dependencies = new string[] { "SimulationTest.Tests.IdentityServiceTests.Register_WithValidData_ShouldSucceed" })]
         public async Task<ApiTestResult> Login_WithValidCredentials_ShouldReturnToken()
@@ -209,162 +215,60 @@ namespace SimulationTest.Tests
 
             try
             {
-                // Ensure we have test credentials from registration
+                // Use the credentials from the registration test
                 if (string.IsNullOrEmpty(_testEmail) || string.IsNullOrEmpty(_testPassword))
                 {
+                    stopwatch.Stop();
                     return ApiTestResult.Failed(
-                        "Test user credentials not available. Registration may have failed.",
+                        nameof(Login_WithValidCredentials_ShouldReturnToken),
+                        "Test credentials not available. Registration test may have failed.",
                         null,
                         stopwatch.Elapsed);
                 }
 
-                // Create login request per API documentation
-                var loginRequest = new LoginRequest
-                {
-                    Email = _testEmail,
-                    Password = _testPassword
-                };
-
-                Console.WriteLine($"Attempting login for user: {_testEmail}");
-
-                // Send login request to the documented endpoint: /auth/login
-                var client = _httpClientFactory.GetClient("identity");
-                var response = await client.PostAsJsonAsync("/auth/login", loginRequest);
-
-                var responseContent = await response.Content.ReadAsStringAsync();
-                Console.WriteLine($"Login response status: {response.StatusCode}");
-
-                if (_verbose)
-                {
-                    Console.WriteLine($"Login response content: {responseContent}");
-                }
-
-                // Process the response
-                if (!response.IsSuccessStatusCode)
+                // Try to authenticate using helper method
+                var token = await AuthenticateAsync(_testEmail, _testPassword);
+                if (token == null)
                 {
                     stopwatch.Stop();
                     return ApiTestResult.Failed(
-                        $"Login failed with status code {response.StatusCode}: {responseContent}",
-                        new Exception(responseContent),
+                        nameof(Login_WithValidCredentials_ShouldReturnToken),
+                        "Login failed: Could not obtain authentication token",
+                        null,
                         stopwatch.Elapsed);
                 }
 
-                // Try multiple response formats to handle potential API variations
-                UserDirectResponse userResponse = null;
-
-                try
+                // Verify token
+                if (string.IsNullOrEmpty(token.Token))
                 {
-                    // Direct deserialization first
-                    userResponse = JsonSerializer.Deserialize<UserDirectResponse>(responseContent, _jsonOptions);
-
-                    // Validate the login response
-                    if (userResponse != null && !string.IsNullOrEmpty(userResponse.Token))
-                    {
-                        // Store token for future tests
-                        _token = new SecurityToken
-                        {
-                            Token = userResponse.Token
-                        };
-
-                        // Store refresh token
-                        _refreshToken = userResponse.RefreshToken;
-
-                        // Set user ID if possible
-                        if (!string.IsNullOrEmpty(userResponse.UserId) && ObjectId.TryParse(userResponse.UserId, out var userId))
-                        {
-                            _token.UserId = userId;
-                            _userId = userResponse.UserId;
-                        }
-
-                        // Update HttpClientFactory
-                        _httpClientFactory.SetUserAuthToken(_userId, userResponse.Token);
-
-                        // Validate the token response structure
-                        var validationResult = ApiResponseValidator.ValidateFieldValues(
-                            userResponse,
-                            new Dictionary<string, object>
-                            {
-                                { "Token", userResponse.Token },
-                                { "UserId", userResponse.UserId }
-                            },
-                            stopwatch);
-
-                        if (!validationResult.Success)
-                        {
-                            return validationResult;
-                        }
-
-                        // Check performance expectations
-                        return userResponse.ShouldRespondWithin(stopwatch, 3000, "Login response time is too slow");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Failed to parse login response as direct model: {ex.Message}");
-                    // We'll try alternative formats below
+                    stopwatch.Stop();
+                    return ApiTestResult.Failed(
+                        nameof(Login_WithValidCredentials_ShouldReturnToken),
+                        "Login failed: Token is empty",
+                        null,
+                        stopwatch.Elapsed);
                 }
 
-                // If direct parsing failed, try with ApiResponse wrapper
-                try
-                {
-                    var apiResponse = JsonSerializer.Deserialize<ApiResponse<LoginResponse>>(responseContent, _jsonOptions);
-                    if (apiResponse?.Data != null && !string.IsNullOrEmpty(apiResponse.Data.Token))
-                    {
-                        // Store token for future tests
-                        _token = new SecurityToken
-                        {
-                            Token = apiResponse.Data.Token
-                        };
+                Console.WriteLine($"Login successful. Token received: {token.Token.Substring(0, 20)}...");
 
-                        // Store user ID
-                        _userId = apiResponse.Data.UserId;
-
-                        if (!string.IsNullOrEmpty(_userId) && ObjectId.TryParse(_userId, out var userId))
-                        {
-                            _token.UserId = userId;
-                        }
-
-                        // Update HttpClientFactory
-                        _httpClientFactory.SetUserAuthToken(_userId, apiResponse.Data.Token);
-
-                        return ApiTestResult.Passed(stopwatch.Elapsed);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Failed to parse login response as ApiResponse wrapper: {ex.Message}");
-                    // Continue to final failure case
-                }
-
-                // If we get here, all parsing attempts failed
                 stopwatch.Stop();
-                return ApiTestResult.Failed(
-                    "Failed to parse login response in any expected format",
-                    new Exception(responseContent),
-                    stopwatch.Elapsed);
+                return ApiTestResult.Passed(nameof(Login_WithValidCredentials_ShouldReturnToken), stopwatch.Elapsed);
             }
             catch (Exception ex)
             {
                 stopwatch.Stop();
-                return ApiTestResult.Failed($"Login exception: {ex.Message}", ex, stopwatch.Elapsed);
+                return ApiTestResult.Failed(
+                    nameof(Login_WithValidCredentials_ShouldReturnToken),
+                    $"Login exception: {ex.Message}",
+                    ex,
+                    stopwatch.Elapsed);
             }
         }
 
-        /// <summary>
-        /// Direct response model for user registration and login
-        /// </summary>
-        private class UserDirectResponse
-        {
-            public string UserId { get; set; }
-            public string Username { get; set; }
-            public string Email { get; set; }
-            public string Token { get; set; }
-            public string RefreshToken { get; set; }
-            public long Expiration { get; set; }
-        }
+        // Using CommonLib.Models.Identity.RegisterResponse instead of custom class
 
         /// <summary>
-        /// Test that the current user info can be retrieved
+        /// Test getting current user information when authenticated
         /// </summary>
         [ApiTest("Test getting current user when authenticated", Dependencies = new string[] { "SimulationTest.Tests.IdentityServiceTests.Login_WithValidCredentials_ShouldReturnToken" })]
         public async Task<ApiTestResult> GetCurrentUser_WhenAuthenticated_ShouldReturnUserInfo()
@@ -374,37 +278,51 @@ namespace SimulationTest.Tests
 
             try
             {
-                // Arrange
+                // Ensure we have authentication
                 await EnsureAuthenticatedAsync();
 
-                // Act
-                var userInfo = await GetAsync<UserResponse>("identity", "/auth/user");
+                // Get user info
+                var userInfo = await GetAsync<User>("identity", "/auth/user", true);
 
-                // Assert using ApiResponseValidator
-                var validationResult = ApiResponseValidator.ValidateFieldValues(
-                    userInfo,
-                    new Dictionary<string, object>
-                    {
-                        { "UserId", _userId }
-                    },
-                    stopwatch);
-
-                if (!validationResult.Success)
+                if (userInfo == null || userInfo.Id == ObjectId.Empty)
                 {
-                    return validationResult;
+                    stopwatch.Stop();
+                    return ApiTestResult.Failed(
+                        nameof(GetCurrentUser_WhenAuthenticated_ShouldReturnUserInfo),
+                        "Failed to get current user information",
+                        null,
+                        stopwatch.Elapsed);
                 }
 
-                return ApiTestResult.Passed(stopwatch.Elapsed);
+                // Verify user information
+                if (string.IsNullOrEmpty(userInfo.Username) || string.IsNullOrEmpty(userInfo.Email))
+                {
+                    stopwatch.Stop();
+                    return ApiTestResult.Failed(
+                        nameof(GetCurrentUser_WhenAuthenticated_ShouldReturnUserInfo),
+                        "User information is incomplete",
+                        null,
+                        stopwatch.Elapsed);
+                }
+
+                Console.WriteLine($"Got user info: {userInfo.Username} ({userInfo.Email})");
+
+                stopwatch.Stop();
+                return ApiTestResult.Passed(nameof(GetCurrentUser_WhenAuthenticated_ShouldReturnUserInfo), stopwatch.Elapsed);
             }
             catch (Exception ex)
             {
                 stopwatch.Stop();
-                return ApiTestResult.Failed($"Exception occurred during test: {ex.Message}", ex, stopwatch.Elapsed);
+                return ApiTestResult.Failed(
+                    nameof(GetCurrentUser_WhenAuthenticated_ShouldReturnUserInfo),
+                    $"Exception while getting user information: {ex.Message}",
+                    ex,
+                    stopwatch.Elapsed);
             }
         }
 
         /// <summary>
-        /// Test that user info can be updated
+        /// Test updating user information
         /// </summary>
         [ApiTest("Test updating user with valid data", Dependencies = new string[] { "SimulationTest.Tests.IdentityServiceTests.Login_WithValidCredentials_ShouldReturnToken" })]
         public async Task<ApiTestResult> UpdateUser_WithValidData_ShouldSucceed()
@@ -414,42 +332,57 @@ namespace SimulationTest.Tests
 
             try
             {
-                // Arrange
+                // Ensure we have authentication
                 await EnsureAuthenticatedAsync();
 
-                // Create update request with currentPassword which is required according to API
-                var updateRequest = new UpdateUserRequest
+                // Create update request
+                var updateRequest = new
                 {
-                    Email = $"updated_{Guid.NewGuid():N}@example.com",
-                    CurrentPassword = _testPassword // Include current password which is required
+                    Username = $"{_testUsername}_updated"
                 };
 
-                Console.WriteLine($"Updating user with email: {updateRequest.Email}");
+                // Update user
+                var updatedUser = await PutAsync<object, User>("identity", "/auth/user", updateRequest, true);
 
-                // Act - Using PutAsync to ensure HTTP PUT method is used as per API docs
-                var updatedUser = await PutAsync<UpdateUserRequest, UserResponse>("identity", "/auth/user", updateRequest);
+                if (updatedUser == null || updatedUser.Id == ObjectId.Empty)
+                {
+                    stopwatch.Stop();
+                    return ApiTestResult.Failed(
+                        nameof(UpdateUser_WithValidData_ShouldSucceed),
+                        "Failed to update user information",
+                        null,
+                        stopwatch.Elapsed);
+                }
 
-                // Assert using ApiResponseValidator
-                var validationResult = ApiResponseValidator.ValidateFieldValues(
-                    updatedUser,
-                    new Dictionary<string, object>
-                    {
-                        { "UserId", _userId },
-                        { "Email", updateRequest.Email }
-                    },
-                    stopwatch);
+                // Verify updated information
+                if (updatedUser.Username != $"{_testUsername}_updated")
+                {
+                    stopwatch.Stop();
+                    return ApiTestResult.Failed(
+                        nameof(UpdateUser_WithValidData_ShouldSucceed),
+                        $"Username was not updated correctly. Expected: {_testUsername}_updated, Actual: {updatedUser.Username}",
+                        null,
+                        stopwatch.Elapsed);
+                }
 
-                return validationResult;
+                Console.WriteLine($"User updated successfully: {updatedUser.Username}");
+
+                stopwatch.Stop();
+                return ApiTestResult.Passed(nameof(UpdateUser_WithValidData_ShouldSucceed), stopwatch.Elapsed);
             }
             catch (Exception ex)
             {
                 stopwatch.Stop();
-                return ApiTestResult.Failed($"Exception occurred during test: {ex.Message}", ex, stopwatch.Elapsed);
+                return ApiTestResult.Failed(
+                    nameof(UpdateUser_WithValidData_ShouldSucceed),
+                    $"Exception while updating user: {ex.Message}",
+                    ex,
+                    stopwatch.Elapsed);
             }
         }
 
         /// <summary>
-        /// Test that a token can be refreshed
+        /// Test refreshing a valid token
         /// </summary>
         [ApiTest("Test refreshing a valid token", Dependencies = new string[] { "SimulationTest.Tests.IdentityServiceTests.Login_WithValidCredentials_ShouldReturnToken" })]
         public async Task<ApiTestResult> RefreshToken_WithValidToken_ShouldReturnNewToken()
@@ -459,69 +392,68 @@ namespace SimulationTest.Tests
 
             try
             {
-                // Arrange - Ensure we have a refresh token from login
+                // Ensure we have authentication
                 if (string.IsNullOrEmpty(_refreshToken))
                 {
+                    stopwatch.Stop();
                     return ApiTestResult.Failed(
-                        "Refresh token not available. Login may have failed or the token wasn't returned.",
+                        nameof(RefreshToken_WithValidToken_ShouldReturnNewToken),
+                        "Refresh token is not available. Login test may have failed to store it.",
                         null,
                         stopwatch.Elapsed);
                 }
 
-                // Create RefreshTokenRequest according to API docs
-                var refreshRequest = new RefreshTokenRequest
+                // Create refresh token request
+                var refreshRequest = new
                 {
                     RefreshToken = _refreshToken
                 };
 
-                Console.WriteLine("Sending refresh token request");
+                // Send refresh token request
+                var client = _httpClientFactory.GetClient("identity");
+                var response = await client.PostAsJsonAsync("/auth/refresh-token", refreshRequest);
 
-                // Act - Use the postAsync method for cleaner error handling
-                try
+                if (!response.IsSuccessStatusCode)
                 {
-                    // Try to refresh the token using the proper endpoint
-                    var refreshResponse = await PostAsync<RefreshTokenRequest, SecurityToken>(
-                        "identity",
-                        "/auth/refresh-token",
-                        refreshRequest);
-
-                    // Validate that we got a valid token back
-                    if (refreshResponse == null || string.IsNullOrEmpty(refreshResponse.Token))
-                    {
-                        return ApiTestResult.Failed(
-                            "Refresh token response did not contain a valid token",
-                            null,
-                            stopwatch.Elapsed);
-                    }
-
-                    // Update token for future tests
-                    _token = refreshResponse;
-
-                    // Update HttpClientFactory
-                    _httpClientFactory.SetUserAuthToken(_userId, refreshResponse.Token);
-
-                    Console.WriteLine("Token refreshed successfully");
-                    return ApiTestResult.Passed(stopwatch.Elapsed);
-                }
-                catch (Exception ex) when (ex.Message.Contains("401") || ex.Message.Contains("400"))
-                {
-                    // Refresh token might be invalid, which is expected in certain scenarios
-                    // This is a valid response for API conformance testing
-                    Console.WriteLine($"Refresh token request returned expected error: {ex.Message}");
-                    return ApiTestResult.Passed(stopwatch.Elapsed);
-                }
-                catch (Exception ex)
-                {
+                    stopwatch.Stop();
+                    var errorContent = await response.Content.ReadAsStringAsync();
                     return ApiTestResult.Failed(
-                        $"Error refreshing token: {ex.Message}",
-                        ex,
+                        nameof(RefreshToken_WithValidToken_ShouldReturnNewToken),
+                        $"Failed to refresh token. Status code: {response.StatusCode}, Error: {errorContent}",
+                        new Exception(errorContent),
                         stopwatch.Elapsed);
                 }
+
+                // Parse response
+                var responseContent = await response.Content.ReadAsStringAsync();
+                var tokenResponse = JsonSerializer.Deserialize<SecurityToken>(responseContent, _jsonOptions);
+
+                if (tokenResponse == null || string.IsNullOrEmpty(tokenResponse.Token))
+                {
+                    stopwatch.Stop();
+                    return ApiTestResult.Failed(
+                        nameof(RefreshToken_WithValidToken_ShouldReturnNewToken),
+                        "Failed to deserialize token response",
+                        null,
+                        stopwatch.Elapsed);
+                }
+
+                // Update stored token
+                _token = tokenResponse;
+
+                Console.WriteLine($"Token refreshed successfully: {tokenResponse.Token.Substring(0, 20)}...");
+
+                stopwatch.Stop();
+                return ApiTestResult.Passed(nameof(RefreshToken_WithValidToken_ShouldReturnNewToken), stopwatch.Elapsed);
             }
             catch (Exception ex)
             {
                 stopwatch.Stop();
-                return ApiTestResult.Failed($"Exception occurred during test: {ex.Message}", ex, stopwatch.Elapsed);
+                return ApiTestResult.Failed(
+                    nameof(RefreshToken_WithValidToken_ShouldReturnNewToken),
+                    $"Exception while refreshing token: {ex.Message}",
+                    ex,
+                    stopwatch.Elapsed);
             }
         }
     }

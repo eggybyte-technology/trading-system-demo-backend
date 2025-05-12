@@ -21,16 +21,35 @@ namespace SimulationTest.Core
         private bool _isDisplaying;
         private Timer _refreshTimer;
         private readonly int _refreshIntervalMs;
+        private readonly IProgress<TestProgress> _progressReporter;
+        private readonly StreamWriter _logWriter;
 
         /// <summary>
         /// Initializes a new instance of the TestProgressTracker class
         /// </summary>
         /// <param name="totalTests">The total number of tests that will be run</param>
         /// <param name="refreshIntervalMs">The refresh interval in milliseconds</param>
-        public TestProgressTracker(int totalTests, int refreshIntervalMs = 500)
+        /// <param name="progressReporter">Reporter for test progress updates</param>
+        /// <param name="logFile">Optional path to a log file</param>
+        public TestProgressTracker(int totalTests, int refreshIntervalMs = 500, IProgress<TestProgress> progressReporter = null, string logFile = null)
         {
             _totalTests = totalTests;
             _refreshIntervalMs = refreshIntervalMs;
+            _progressReporter = progressReporter;
+
+            // Initialize log writer if a log file is provided
+            if (!string.IsNullOrEmpty(logFile))
+            {
+                try
+                {
+                    // Open with append mode and explicit autoflush set to true
+                    _logWriter = new StreamWriter(logFile, true) { AutoFlush = true };
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error initializing log file: {ex.Message}");
+                }
+            }
         }
 
         /// <summary>
@@ -54,6 +73,12 @@ namespace SimulationTest.Core
 
                 _isDisplaying = true;
                 _refreshTimer = new Timer(UpdateDisplay, null, 0, _refreshIntervalMs);
+
+                // Log the start of tracking
+                LogMessage("Test progress tracking started");
+
+                // Report initial progress
+                ReportProgress("Starting tests...", 0, 0, _totalTests);
             }
         }
 
@@ -75,6 +100,9 @@ namespace SimulationTest.Core
 
             // Use explicit markup to avoid parsing errors
             AnsiConsole.MarkupLine($"Progress: {_completedTests}/{_totalTests} ([green]{percentComplete}%[/])");
+
+            // Also report progress through the progress reporter if available
+            ReportProgress($"Running tests", (int)percentComplete, _completedTests, _totalTests);
         }
 
         /// <summary>
@@ -90,6 +118,19 @@ namespace SimulationTest.Core
                     _succeededTests++;
 
                 _latencies.Add(result.Duration);
+
+                // Log the test result
+                LogMessage($"Test '{result.TestName}' completed: {(result.Success ? "SUCCESS" : "FAILED")} in {result.Duration.TotalMilliseconds:F2}ms");
+
+                // Report progress
+                ReportProgress($"Running tests",
+                    _totalTests > 0 ? (int)(100.0 * _completedTests / _totalTests) : 0,
+                    _completedTests,
+                    _totalTests,
+                    _succeededTests,
+                    _completedTests - _succeededTests,
+                    0,
+                    $"Test '{result.TestName}' completed: {(result.Success ? "SUCCESS" : "FAILED")} in {result.Duration.TotalMilliseconds:F2}ms");
             }
         }
 
@@ -123,6 +164,14 @@ namespace SimulationTest.Core
 
                 _completedTests = completed;
                 _succeededTests = succeeded;
+
+                // Report progress
+                ReportProgress("Running tests",
+                    _totalTests > 0 ? (int)(100.0 * _completedTests / _totalTests) : 0,
+                    _completedTests,
+                    _totalTests,
+                    _succeededTests,
+                    _completedTests - _succeededTests);
             }
         }
 
@@ -140,6 +189,92 @@ namespace SimulationTest.Core
                 _refreshTimer?.Change(Timeout.Infinite, Timeout.Infinite);
                 _refreshTimer?.Dispose();
                 _refreshTimer = null;
+
+                // Log the end of tracking
+                LogMessage("Test progress tracking stopped");
+
+                // Report final progress
+                ReportProgress("Tests completed",
+                    100,
+                    _completedTests,
+                    _totalTests,
+                    _succeededTests,
+                    _completedTests - _succeededTests);
+
+                // Close and dispose log writer if open
+                if (_logWriter != null)
+                {
+                    try
+                    {
+                        _logWriter.Flush();
+                        _logWriter.Close();
+                        _logWriter.Dispose();
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Error closing log file: {ex.Message}");
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Logs a message to the console and log file
+        /// </summary>
+        /// <param name="message">The message to log</param>
+        public void LogMessage(string message)
+        {
+            var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
+            var logMessage = $"[[{timestamp}]] {message}";
+
+            // Write to console
+            Console.WriteLine(logMessage);
+
+            // Write to log file if available
+            if (_logWriter != null)
+            {
+                lock (_lock) // Add lock for thread safety
+                {
+                    try
+                    {
+                        _logWriter.WriteLine(logMessage);
+                        _logWriter.Flush(); // Explicitly flush even though AutoFlush is enabled
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Error writing to log file: {ex.Message}");
+                    }
+                }
+            }
+
+            // Report as a log message through the progress reporter
+            if (_progressReporter != null)
+            {
+                _progressReporter.Report(new TestProgress
+                {
+                    LogMessage = message
+                });
+            }
+        }
+
+        /// <summary>
+        /// Reports progress through the progress reporter
+        /// </summary>
+        private void ReportProgress(string message, int percentage, int completed, int total, int passed = -1, int failed = -1, int skipped = -1, string logMessage = null)
+        {
+            if (_progressReporter != null)
+            {
+                _progressReporter.Report(new TestProgress
+                {
+                    Message = message,
+                    Percentage = percentage,
+                    Completed = completed,
+                    Total = total,
+                    Passed = passed,
+                    Failed = failed,
+                    Skipped = skipped,
+                    LogMessage = logMessage
+                });
             }
         }
 
@@ -193,6 +328,9 @@ namespace SimulationTest.Core
                 AnsiConsole.WriteLine();
                 AnsiConsole.Write(table);
                 AnsiConsole.WriteLine();
+
+                // Log the summary
+                LogMessage($"Test Run Summary: {_completedTests}/{_totalTests} completed, {_succeededTests} succeeded, {failedTests} failed, {avgLatency:F2}ms avg latency");
             }
         }
     }

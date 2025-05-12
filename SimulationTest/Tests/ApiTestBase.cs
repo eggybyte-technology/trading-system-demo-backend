@@ -554,49 +554,5 @@ namespace SimulationTest.Tests
         }
     }
 
-    /// <summary>
-    /// Generic API response wrapper
-    /// </summary>
-    /// <typeparam name="T">The type of data in the response</typeparam>
-    public class ApiResponse<T>
-    {
-        /// <summary>
-        /// Gets or sets the response data
-        /// </summary>
-        public T? Data { get; set; }
-
-        /// <summary>
-        /// Gets or sets a value indicating whether the request was successful
-        /// </summary>
-        public bool Success { get; set; }
-
-        /// <summary>
-        /// Gets or sets the error message
-        /// </summary>
-        public string? Message { get; set; }
-
-        /// <summary>
-        /// Gets or sets the error code
-        /// </summary>
-        public string? Code { get; set; }
-    }
-
-    /// <summary>
-    /// Login request model
-    /// </summary>
-    public class LoginRequest
-    {
-        public string Email { get; set; } = string.Empty;
-        public string Password { get; set; } = string.Empty;
-    }
-
-    /// <summary>
-    /// Registration request model
-    /// </summary>
-    public class RegisterRequest
-    {
-        public string Username { get; set; } = string.Empty;
-        public string Email { get; set; } = string.Empty;
-        public string Password { get; set; } = string.Empty;
-    }
+    // Using CommonLib.Models.ApiResponse<T>, CommonLib.Models.Identity.LoginRequest, and CommonLib.Models.Identity.RegisterRequest directly
 }

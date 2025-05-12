@@ -34,28 +34,32 @@ namespace SimulationTest.Core
     /// </summary>
     public class ApiTestResult
     {
+        public string TestName { get; set; }
         public bool Success { get; set; }
         public string Message { get; set; }
         public Exception Exception { get; set; }
         public TimeSpan Duration { get; set; }
 
-        public static ApiTestResult Passed(TimeSpan duration) => new ApiTestResult
+        public static ApiTestResult Passed(string testName, TimeSpan duration) => new ApiTestResult
         {
+            TestName = testName,
             Success = true,
             Message = "Test passed successfully",
             Duration = duration
         };
 
-        public static ApiTestResult Failed(string message, Exception ex, TimeSpan duration) => new ApiTestResult
+        public static ApiTestResult Failed(string testName, string message, Exception ex, TimeSpan duration) => new ApiTestResult
         {
+            TestName = testName,
             Success = false,
             Message = message,
             Exception = ex,
             Duration = duration
         };
 
-        public static ApiTestResult Skipped(string reason) => new ApiTestResult
+        public static ApiTestResult Skipped(string testName, string reason) => new ApiTestResult
         {
+            TestName = testName,
             Success = false,
             Message = $"Test skipped: {reason}"
         };
@@ -89,14 +93,18 @@ namespace SimulationTest.Core
         private readonly string _timestamp;
         private readonly string _testFolderPath;
         private TestProgressTracker _progressTracker;
+        private readonly IProgress<TestProgress> _progressReporter;
 
         /// <summary>
         /// Initializes a new instance of the UnitTestRunner class
         /// </summary>
         /// <param name="configuration">Configuration for the test runner</param>
-        public UnitTestRunner(IConfiguration configuration)
+        /// <param name="progressReporter">Reporter for real-time progress updates</param>
+        public UnitTestRunner(IConfiguration configuration, IProgress<TestProgress> progressReporter = null)
         {
-            Console.WriteLine("Initializing UnitTestRunner...");
+            _progressReporter = progressReporter;
+            ReportProgress("Initializing UnitTestRunner...", 0, 0, 0, 0, 0, 0, "Initializing UnitTestRunner...");
+
             _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
 
             // Create timestamp for consistent naming across all files
@@ -107,58 +115,59 @@ namespace SimulationTest.Core
             Directory.CreateDirectory(_testFolderPath);
 
             // Set up log file within the test folder
-            _logFile = Path.Combine(_testFolderPath, "unittest_log.txt");
-            Console.WriteLine($"Log file created at: {_logFile}");
-
-            // Initialize the log file
-            using var logWriter = new StreamWriter(_logFile, false);
-            logWriter.WriteLine("=== Trading System Unit Test Log ===");
-            logWriter.WriteLine($"Timestamp: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-            logWriter.WriteLine("=================================\n");
-
-            // Log the configuration to help debug issues
-            Console.WriteLine("Logging configuration settings...");
-            logWriter.WriteLine("Configuration Settings:");
-            logWriter.WriteLine($"Tests:Mode = {configuration["Tests:Mode"] ?? "not set"}");
-            logWriter.WriteLine($"Tests:Verbose = {configuration["Tests:Verbose"] ?? "not set"}");
-            logWriter.WriteLine($"Tests:GenerateTestCoverage = {configuration["Tests:GenerateTestCoverage"] ?? "not set"}");
-            logWriter.WriteLine($"Tests:CoverageOutputPath = {configuration["Tests:CoverageOutputPath"] ?? "not set"}");
-            logWriter.WriteLine($"Tests:TestTimeout = {configuration["Tests:TestTimeout"] ?? "not set"}");
-            logWriter.WriteLine($"Tests:RetryCount = {configuration["Tests:RetryCount"] ?? "not set"}");
-            logWriter.WriteLine();
+            _logFile = configuration["TestSettings:LogFile"] ?? Path.Combine(_testFolderPath, "unittest_log.txt");
+            ReportProgress("Initializing", 0, 0, 0, 0, 0, 0, $"Log file created at: {_logFile}");
 
             // Get configuration settings (with safe parsing)
             _verbose = TryParseBool(configuration["Tests:Verbose"], false);
             _generateCoverage = TryParseBool(configuration["Tests:GenerateTestCoverage"], true);
             _coverageOutputPath = configuration["Tests:CoverageOutputPath"] ?? "./logs/coverage";
-            _testTimeout = TryParseInt(configuration["Tests:TestTimeout"], 30);
+            _testTimeout = TryParseInt(configuration["TestSettings:TestTimeout"], 30);
             _retryCount = TryParseInt(configuration["Tests:RetryCount"], 3);
+
+            // Initialize progress tracker with log file - only this object will directly write to the log file
+            _progressTracker = new TestProgressTracker(0, 500, _progressReporter, _logFile);
+
+            // Log initial configuration via the progress tracker
+            _progressTracker.LogMessage("=== Trading System Unit Test Log ===");
+            _progressTracker.LogMessage($"Timestamp: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            _progressTracker.LogMessage("=================================");
+            _progressTracker.LogMessage("");
+
+            // Log the configuration to help debug issues
+            _progressTracker.LogMessage("Configuration Settings:");
+            _progressTracker.LogMessage($"Tests:Mode = {configuration["Tests:Mode"] ?? "not set"}");
+            _progressTracker.LogMessage($"Tests:Verbose = {configuration["Tests:Verbose"] ?? "not set"}");
+            _progressTracker.LogMessage($"Tests:GenerateTestCoverage = {configuration["Tests:GenerateTestCoverage"] ?? "not set"}");
+            _progressTracker.LogMessage($"Tests:CoverageOutputPath = {configuration["Tests:CoverageOutputPath"] ?? "not set"}");
+            _progressTracker.LogMessage($"Tests:TestTimeout = {configuration["Tests:TestTimeout"] ?? "not set"}");
+            _progressTracker.LogMessage($"Tests:RetryCount = {configuration["Tests:RetryCount"] ?? "not set"}");
+            _progressTracker.LogMessage("");
 
             // Ensure coverage output directory exists
             if (_generateCoverage)
             {
                 Directory.CreateDirectory(_coverageOutputPath);
-                Console.WriteLine($"Created coverage output directory: {_coverageOutputPath}");
+                ReportProgress("Setup", 0, 0, 0, 0, 0, 0, $"Created coverage output directory: {_coverageOutputPath}");
             }
 
             // Log the effective configuration values
-            Console.WriteLine("Effective configuration values:");
-            Console.WriteLine($"  Verbose: {_verbose}");
-            Console.WriteLine($"  GenerateTestCoverage: {_generateCoverage}");
-            Console.WriteLine($"  CoverageOutputPath: {_coverageOutputPath}");
-            Console.WriteLine($"  TestTimeout: {_testTimeout}");
-            Console.WriteLine($"  RetryCount: {_retryCount}");
+            var configMessage = "Effective configuration values:" +
+                $"\n  Verbose: {_verbose}" +
+                $"\n  GenerateTestCoverage: {_generateCoverage}" +
+                $"\n  CoverageOutputPath: {_coverageOutputPath}" +
+                $"\n  TestTimeout: {_testTimeout}" +
+                $"\n  RetryCount: {_retryCount}";
 
-            logWriter.WriteLine("Effective Configuration Values:");
-            logWriter.WriteLine($"Verbose: {_verbose}");
-            logWriter.WriteLine($"GenerateTestCoverage: {_generateCoverage}");
-            logWriter.WriteLine($"CoverageOutputPath: {_coverageOutputPath}");
-            logWriter.WriteLine($"TestTimeout: {_testTimeout}");
-            logWriter.WriteLine($"RetryCount: {_retryCount}");
-            logWriter.WriteLine();
+            ReportProgress("Configuration", 0, 0, 0, 0, 0, 0, configMessage);
 
-            // Initialize progress tracker (will be set with totalTests later)
-            _progressTracker = new TestProgressTracker(0);
+            _progressTracker.LogMessage("Effective Configuration Values:");
+            _progressTracker.LogMessage($"Verbose: {_verbose}");
+            _progressTracker.LogMessage($"GenerateTestCoverage: {_generateCoverage}");
+            _progressTracker.LogMessage($"CoverageOutputPath: {_coverageOutputPath}");
+            _progressTracker.LogMessage($"TestTimeout: {_testTimeout}");
+            _progressTracker.LogMessage($"RetryCount: {_retryCount}");
+            _progressTracker.LogMessage("");
         }
 
         // Helper method for safe boolean parsing
@@ -180,6 +189,33 @@ namespace SimulationTest.Core
         }
 
         /// <summary>
+        /// Reports progress through the progress reporter
+        /// </summary>
+        private void ReportProgress(string message, int percentage, int completed, int total, int passed = 0, int failed = 0, int skipped = 0, string logMessage = null)
+        {
+            if (_progressReporter != null)
+            {
+                _progressReporter.Report(new TestProgress
+                {
+                    Message = message,
+                    Percentage = percentage,
+                    Completed = completed,
+                    Total = total,
+                    Passed = passed,
+                    Failed = failed,
+                    Skipped = skipped,
+                    LogMessage = logMessage
+                });
+            }
+
+            // Also log to console
+            if (!string.IsNullOrEmpty(logMessage))
+            {
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] {logMessage}");
+            }
+        }
+
+        /// <summary>
         /// Runs all unit tests in the assembly
         /// </summary>
         /// <returns>Test run results with statistics</returns>
@@ -188,17 +224,7 @@ namespace SimulationTest.Core
             var stopwatch = new Stopwatch();
             stopwatch.Start();
 
-            AnsiConsole.WriteLine();
-            AnsiConsole.WriteLine("Configuration values:");
-            AnsiConsole.WriteLine($"  Verbose: {_verbose}");
-            AnsiConsole.WriteLine($"  GenerateTestCoverage: {_generateCoverage}");
-            AnsiConsole.WriteLine($"  CoverageOutputPath: {_coverageOutputPath}");
-            AnsiConsole.WriteLine($"  TestTimeout: {_testTimeout}");
-            AnsiConsole.WriteLine($"  RetryCount: {_retryCount}");
-            AnsiConsole.WriteLine();
-
-            AnsiConsole.MarkupLine("[green]Running unit tests for Trading System API...[/]");
-            Console.WriteLine("Starting test discovery and execution...");
+            ReportProgress("Starting tests", 0, 0, 0, 0, 0, 0, "Running unit tests for Trading System API...");
 
             // Initialize test counts
             int totalTests = 0;
@@ -210,47 +236,40 @@ namespace SimulationTest.Core
             {
                 // Using reflection to find test methods
                 var assemblyName = Assembly.GetExecutingAssembly().Location;
-                Console.WriteLine($"Using assembly at: {assemblyName}");
+                ReportProgress("Loading assembly", 0, 0, 0, 0, 0, 0, $"Using assembly at: {assemblyName}");
 
-                // Log the location to the log file
-                using (var logWriter = new StreamWriter(_logFile, true))
-                {
-                    logWriter.WriteLine($"Test Assembly: {assemblyName}");
-                    logWriter.WriteLine();
-                }
+                // Log the location to the log file via progress tracker
+                _progressTracker.LogMessage($"Test Assembly: {assemblyName}");
+                _progressTracker.LogMessage("");
 
                 var testAssembly = Assembly.LoadFrom(assemblyName);
-                Console.WriteLine("Assembly loaded successfully.");
+                ReportProgress("Assembly loaded", 0, 0, 0, 0, 0, 0, "Assembly loaded successfully.");
 
                 // Find all test classes (those with methods decorated with ApiTestAttribute)
-                Console.WriteLine("Discovering test classes...");
+                ReportProgress("Discovering test classes", 0, 0, 0, 0, 0, 0, "Discovering test classes...");
                 var testClasses = testAssembly.GetTypes()
                     .Where(t => t.GetMethods().Any(m =>
                         m.GetCustomAttributes(typeof(ApiTestAttribute), false).Length > 0))
                     .ToList();
 
-                Console.WriteLine($"Discovered {testClasses.Count} test classes:");
+                ReportProgress("Test classes discovered", 0, 0, 0, 0, 0, 0, $"Discovered {testClasses.Count} test classes:");
                 foreach (var testClass in testClasses)
                 {
-                    Console.WriteLine($"  - {testClass.Name}");
+                    ReportProgress("Test class discovered", 0, 0, 0, 0, 0, 0, $"  - {testClass.Name}");
                 }
 
-                // Write test classes to log file
-                using (var logWriter = new StreamWriter(_logFile, true))
+                // Write test classes to log file via progress tracker
+                _progressTracker.LogMessage($"Discovered {testClasses.Count} test classes:");
+                foreach (var testClass in testClasses)
                 {
-                    logWriter.WriteLine($"Discovered {testClasses.Count} test classes:");
-                    foreach (var testClass in testClasses)
-                    {
-                        logWriter.WriteLine($"  - {testClass.Name}");
-                    }
-                    logWriter.WriteLine();
+                    _progressTracker.LogMessage($"  - {testClass.Name}");
                 }
+                _progressTracker.LogMessage("");
 
                 if (testClasses.Count == 0)
                 {
-                    AnsiConsole.MarkupLine("[yellow]Warning: No test classes found in the assembly.[/]");
-                    using var logWriter = new StreamWriter(_logFile, true);
-                    logWriter.WriteLine("Warning: No test classes found in the assembly.");
+                    ReportProgress("Warning", 0, 0, 0, 0, 0, 0, "Warning: No test classes found in the assembly.");
+                    _progressTracker.LogMessage("Warning: No test classes found in the assembly.");
                     return new TestRunResults
                     {
                         Total = totalTests,
@@ -261,7 +280,7 @@ namespace SimulationTest.Core
                     };
                 }
 
-                AnsiConsole.MarkupLine($"[blue]Found {testClasses.Count} test classes.[/]");
+                ReportProgress("Test classes found", 0, 0, 0, 0, 0, 0, $"[blue]Found {testClasses.Count} test classes.[/]");
 
                 // Collect all test methods
                 var allTestMethods = new List<(Type ClassType, MethodInfo Method, ApiTestAttribute Attribute)>();
@@ -309,32 +328,26 @@ namespace SimulationTest.Core
                 // Execute tests in order
                 foreach (var (classType, method, attribute) in orderedTests)
                 {
-                    Console.WriteLine($"Running test: {classType.Name}.{method.Name} - {attribute.Description ?? "No description"}");
-                    using (var logWriter = new StreamWriter(_logFile, true))
-                    {
-                        logWriter.WriteLine($"  Test: {method.Name}");
-                        logWriter.WriteLine($"  Description: {attribute.Description ?? "No description"}");
-                        logWriter.WriteLine($"  Start time: {DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}");
-                    }
+                    ReportProgress("Running test", 0, 0, 0, 0, 0, 0, $"Running test: {classType.Name}.{method.Name} - {attribute.Description ?? "No description"}");
+                    _progressTracker.LogMessage($"  Test: {method.Name}");
+                    _progressTracker.LogMessage($"  Description: {attribute.Description ?? "No description"}");
+                    _progressTracker.LogMessage($"  Start time: {DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}");
 
                     // Check if test is skipped
                     if (attribute.Skip)
                     {
                         skippedTests++;
-                        AnsiConsole.MarkupLine($"[yellow]SKIPPED[/]: {classType.Name}.{method.Name}");
-                        using (var logWriter = new StreamWriter(_logFile, true))
-                        {
-                            logWriter.WriteLine($"  Result: SKIPPED");
-                            logWriter.WriteLine($"  Skip reason: {attribute.SkipReason ?? "No reason provided"}");
-                            logWriter.WriteLine();
-                        }
+                        ReportProgress("Skipped", 0, 0, 0, 0, 0, 0, $"[yellow]SKIPPED[/]: {classType.Name}.{method.Name}");
+                        _progressTracker.LogMessage($"  Result: SKIPPED");
+                        _progressTracker.LogMessage($"  Skip reason: {attribute.SkipReason ?? "No reason provided"}");
+                        _progressTracker.LogMessage("");
                         continue;
                     }
 
                     try
                     {
                         // Create instance of the test class
-                        Console.WriteLine($"  Creating instance of {classType.Name}");
+                        ReportProgress("Creating instance of test class", 0, 0, 0, 0, 0, 0, $"  Creating instance of {classType.Name}");
                         var instance = Activator.CreateInstance(classType);
                         if (instance == null)
                         {
@@ -349,19 +362,16 @@ namespace SimulationTest.Core
                         {
                             if (attempt > 0)
                             {
-                                Console.WriteLine($"  Retry attempt {attempt} of {_retryCount}");
-                                AnsiConsole.MarkupLine($"[yellow]RETRY[/] {attempt} of {_retryCount}: {classType.Name}.{method.Name}");
-                                using (var logWriter = new StreamWriter(_logFile, true))
-                                {
-                                    logWriter.WriteLine($"  Retry attempt {attempt} of {_retryCount}");
-                                }
+                                ReportProgress("Retry attempt", 0, 0, 0, 0, 0, 0, $"  Retry attempt {attempt} of {_retryCount}");
+                                ReportProgress("Retry attempt", 0, 0, 0, 0, 0, 0, $"[yellow]RETRY[/] {attempt} of {_retryCount}: {classType.Name}.{method.Name}");
+                                _progressTracker.LogMessage($"  Retry attempt {attempt} of {_retryCount}");
                             }
 
                             try
                             {
                                 // Create a cancellation token source with the configured timeout
                                 using var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(_testTimeout));
-                                Console.WriteLine($"  Executing test with timeout: {_testTimeout} seconds");
+                                ReportProgress("Executing test", 0, 0, 0, 0, 0, 0, $"  Executing test with timeout: {_testTimeout} seconds");
 
                                 // Run the test with a timeout
                                 var methodStopwatch = new Stopwatch();
@@ -381,7 +391,7 @@ namespace SimulationTest.Core
                                         // For async methods returning Task, consider as success
                                         var voidTask = (Task)method.Invoke(instance, null);
                                         voidTask.Wait();
-                                        return ApiTestResult.Passed(methodStopwatch.Elapsed);
+                                        return ApiTestResult.Passed(method.Name, methodStopwatch.Elapsed);
                                     }
                                     else if (method.ReturnType == typeof(ApiTestResult))
                                     {
@@ -392,7 +402,7 @@ namespace SimulationTest.Core
                                     {
                                         // For other return types, consider as success
                                         method.Invoke(instance, null);
-                                        return ApiTestResult.Passed(methodStopwatch.Elapsed);
+                                        return ApiTestResult.Passed(method.Name, methodStopwatch.Elapsed);
                                     }
                                 });
 
@@ -402,35 +412,29 @@ namespace SimulationTest.Core
                                 testResult = task.Result;
                                 if (testResult.Success)
                                 {
-                                    Console.WriteLine($"  Test executed successfully");
+                                    ReportProgress("Test executed successfully", 0, 0, 0, 0, 0, 0, $"  Test executed successfully");
                                     break;
                                 }
                                 else
                                 {
                                     lastException = testResult.Exception;
-                                    Console.WriteLine($"  Test failed: {testResult.Message}");
+                                    ReportProgress("Test failed", 0, 0, 0, 0, 0, 0, $"  Test failed: {testResult.Message}");
                                 }
                             }
                             catch (OperationCanceledException)
                             {
-                                Console.WriteLine($"  Test timed out after {_testTimeout} seconds");
+                                ReportProgress("Test timed out", 0, 0, 0, 0, 0, 0, $"  Test timed out after {_testTimeout} seconds");
                                 lastException = new TimeoutException($"Test timed out after {_testTimeout} seconds");
-                                using (var logWriter = new StreamWriter(_logFile, true))
-                                {
-                                    logWriter.WriteLine($"  Execution timed out after {_testTimeout} seconds");
-                                }
+                                _progressTracker.LogMessage($"  Execution timed out after {_testTimeout} seconds");
                             }
                             catch (Exception ex)
                             {
                                 var actualException = ex.InnerException ?? ex;
-                                Console.WriteLine($"  Test failed with exception: {actualException.GetType().Name}: {actualException.Message}");
+                                ReportProgress("Test failed", 0, 0, 0, 0, 0, 0, $"  Test failed with exception: {actualException.GetType().Name}: {actualException.Message}");
                                 lastException = actualException;
-                                using (var logWriter = new StreamWriter(_logFile, true))
-                                {
-                                    logWriter.WriteLine($"  Execution failed with exception: {actualException.GetType().Name}");
-                                    logWriter.WriteLine($"  Message: {actualException.Message}");
-                                    logWriter.WriteLine($"  Stack trace: {actualException.StackTrace}");
-                                }
+                                _progressTracker.LogMessage($"  Execution failed with exception: {actualException.GetType().Name}");
+                                _progressTracker.LogMessage($"  Message: {actualException.Message}");
+                                _progressTracker.LogMessage($"  Stack trace: {actualException.StackTrace}");
 
                                 // Only wait before retrying if this isn't the last attempt
                                 if (attempt < _retryCount - 1)
@@ -443,62 +447,60 @@ namespace SimulationTest.Core
                         if (testResult != null && testResult.Success)
                         {
                             passedTests++;
-                            AnsiConsole.MarkupLine($"[green]PASSED[/]: {classType.Name}.{method.Name}");
-                            Console.WriteLine($"  Result: PASSED");
-                            using (var logWriter = new StreamWriter(_logFile, true))
-                            {
-                                logWriter.WriteLine($"  Result: PASSED");
-                                logWriter.WriteLine($"  End time: {DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}");
-                                logWriter.WriteLine($"  Duration: {testResult.Duration.TotalMilliseconds:F2} ms");
-                                logWriter.WriteLine();
-                            }
+                            ReportProgress("Test passed", 0, 0, 0, 0, 0, 0, $"[green]PASSED[/]: {classType.Name}.{method.Name}");
+                            ReportProgress("Test passed", 0, 0, 0, 0, 0, 0, $"  Result: PASSED");
+                            _progressTracker.LogMessage($"  Result: PASSED");
+                            _progressTracker.LogMessage($"  End time: {DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}");
+                            _progressTracker.LogMessage($"  Duration: {testResult.Duration.TotalMilliseconds:F2} ms");
+                            _progressTracker.LogMessage("");
                         }
                         else
                         {
                             failedTests++;
-                            AnsiConsole.MarkupLine($"[red]FAILED[/]: {classType.Name}.{method.Name}");
-                            Console.WriteLine($"  Result: FAILED");
+                            ReportProgress("Test failed", 0, 0, 0, 0, 0, 0, $"[red]FAILED[/]: {classType.Name}.{method.Name}");
+                            ReportProgress("Test failed", 0, 0, 0, 0, 0, 0, $"  Result: FAILED");
 
                             string errorMessage = testResult?.Message ??
                                 (lastException != null ? lastException.Message : "Unknown error");
 
                             if (_verbose)
                             {
-                                AnsiConsole.MarkupLine($"[red]Error: {errorMessage}[/]");
+                                ReportProgress("Test failed", 0, 0, 0, 0, 0, 0, $"[red]Error: {errorMessage}[/]");
                             }
 
                             // Log the failure
-                            using var logWriter = new StreamWriter(_logFile, true);
-                            logWriter.WriteLine($"  Result: FAILED");
-                            logWriter.WriteLine($"  End time: {DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}");
-                            logWriter.WriteLine($"  Error: {errorMessage}");
+                            _progressTracker.LogMessage($"  Result: FAILED");
+                            _progressTracker.LogMessage($"  End time: {DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}");
+                            _progressTracker.LogMessage($"  Error: {errorMessage}");
                             if (lastException != null)
                             {
-                                logWriter.WriteLine($"  Stack trace: {lastException.StackTrace}");
+                                _progressTracker.LogMessage($"  Stack trace: {lastException.StackTrace}");
                             }
-                            logWriter.WriteLine();
+                            _progressTracker.LogMessage("");
                         }
 
                         // Update progress tracker
-                        _progressTracker.UpdateTestResult(testResult ?? ApiTestResult.Failed("Failed to get test result", lastException, TimeSpan.Zero));
+                        _progressTracker.UpdateTestResult(testResult ?? ApiTestResult.Failed(method.Name,
+                            testResult?.Message ?? (lastException != null ? lastException.Message : "Unknown error"),
+                            lastException,
+                            TimeSpan.Zero));
                     }
                     catch (Exception ex)
                     {
                         failedTests++;
-                        AnsiConsole.MarkupLine($"[red]ERROR[/]: {classType.Name}.{method.Name}");
-                        AnsiConsole.MarkupLine($"[red]Could not instantiate test class: {ex.Message}[/]");
-                        Console.WriteLine($"  ERROR: Could not instantiate test class: {ex.Message}");
+                        ReportProgress("Test failed", 0, 0, 0, 0, 0, 0, $"[red]ERROR[/]: {classType.Name}.{method.Name}");
+                        ReportProgress("Test failed", 0, 0, 0, 0, 0, 0, $"[red]Could not instantiate test class: {ex.Message}[/]");
+                        ReportProgress("Test failed", 0, 0, 0, 0, 0, 0, $"  ERROR: Could not instantiate test class: {ex.Message}");
 
                         // Log the failure
-                        using var logWriter = new StreamWriter(_logFile, true);
-                        logWriter.WriteLine($"  Result: ERROR (Could not instantiate test class)");
-                        logWriter.WriteLine($"  End time: {DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}");
-                        logWriter.WriteLine($"  Error: {ex.Message}");
-                        logWriter.WriteLine($"  Stack trace: {ex.StackTrace}");
-                        logWriter.WriteLine();
+                        _progressTracker.LogMessage($"  Result: ERROR (Could not instantiate test class)");
+                        _progressTracker.LogMessage($"  End time: {DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}");
+                        _progressTracker.LogMessage($"  Error: {ex.Message}");
+                        _progressTracker.LogMessage($"  Stack trace: {ex.StackTrace}");
+                        _progressTracker.LogMessage("");
 
                         // Update progress tracker with failure
-                        _progressTracker.UpdateTestResult(ApiTestResult.Failed($"Could not instantiate test class: {ex.Message}", ex, TimeSpan.Zero));
+                        _progressTracker.UpdateTestResult(ApiTestResult.Failed(method.Name, $"Could not instantiate test class: {ex.Message}", ex, TimeSpan.Zero));
                     }
                 }
 
@@ -511,19 +513,18 @@ namespace SimulationTest.Core
                 stopwatch.Stop();
                 var elapsed = stopwatch.Elapsed;
 
-                AnsiConsole.WriteLine();
-                AnsiConsole.MarkupLine("[blue]Test Run Complete.[/]");
-                AnsiConsole.WriteLine($"Time elapsed: {elapsed.TotalSeconds:F2} seconds");
-                AnsiConsole.WriteLine($"Total tests: {totalTests}");
-                AnsiConsole.WriteLine($"Passed: {passedTests}");
-                AnsiConsole.WriteLine($"Failed: {failedTests}");
-                AnsiConsole.WriteLine($"Skipped: {skippedTests}");
-                AnsiConsole.WriteLine();
+                ReportProgress("Test run complete", 0, 0, 0, 0, 0, 0, "Test Run Complete.");
+                ReportProgress("Test run complete", 0, 0, 0, 0, 0, 0, $"Time elapsed: {elapsed.TotalSeconds:F2} seconds");
+                ReportProgress("Test run complete", 0, 0, 0, 0, 0, 0, $"Total tests: {totalTests}");
+                ReportProgress("Test run complete", 0, 0, 0, 0, 0, 0, $"Passed: {passedTests}");
+                ReportProgress("Test run complete", 0, 0, 0, 0, 0, 0, $"Failed: {failedTests}");
+                ReportProgress("Test run complete", 0, 0, 0, 0, 0, 0, $"Skipped: {skippedTests}");
+                ReportProgress("Test run complete", 0, 0, 0, 0, 0, 0, "");
 
                 if (failedTests > 0)
                 {
-                    AnsiConsole.MarkupLine($"[red]Failed test count: {failedTests}[/]");
-                    AnsiConsole.MarkupLine($"[yellow]See log file for details: {_logFile}[/]");
+                    ReportProgress("Failed test count", 0, 0, 0, 0, 0, 0, $"[red]Failed test count: {failedTests}[/]");
+                    ReportProgress("Failed test count", 0, 0, 0, 0, 0, 0, $"[yellow]See log file for details: {_logFile}[/]");
 
                     // Clean up coverage files
                     CleanupCoverageFiles();
@@ -539,8 +540,8 @@ namespace SimulationTest.Core
                     };
                 }
 
-                AnsiConsole.MarkupLine("[green]All tests passed.[/]");
-                AnsiConsole.WriteLine();
+                ReportProgress("All tests passed", 0, 0, 0, 0, 0, 0, "[green]All tests passed.[/]");
+                ReportProgress("All tests passed", 0, 0, 0, 0, 0, 0, "");
 
                 // Clean up coverage files
                 CleanupCoverageFiles();
@@ -557,16 +558,10 @@ namespace SimulationTest.Core
             }
             catch (Exception ex)
             {
-                stopwatch.Stop();
-
-                AnsiConsole.MarkupLine($"[red]Error running tests: {ex.Message}[/]");
-                Console.WriteLine($"Error running tests: {ex.Message}");
-                Console.WriteLine(ex.StackTrace);
-
-                using var logWriter = new StreamWriter(_logFile, true);
-                logWriter.WriteLine("UNHANDLED EXCEPTION");
-                logWriter.WriteLine($"Error: {ex.Message}");
-                logWriter.WriteLine(ex.StackTrace);
+                ReportProgress("Error", 100, totalTests, totalTests, passedTests, failedTests, skippedTests, $"Unhandled exception: {ex.Message}");
+                _progressTracker.LogMessage("UNHANDLED EXCEPTION");
+                _progressTracker.LogMessage($"Error: {ex.Message}");
+                _progressTracker.LogMessage(ex.StackTrace);
 
                 // Still try to clean up coverage files
                 try
@@ -604,10 +599,10 @@ namespace SimulationTest.Core
             }
 
             // Log all available tests
-            Console.WriteLine("Available tests for dependency resolution:");
+            ReportProgress("Available tests for dependency resolution", 0, 0, 0, 0, 0, 0, "Available tests for dependency resolution:");
             foreach (var key in testMethodMap.Keys)
             {
-                Console.WriteLine($"  - {key}");
+                ReportProgress("Available tests for dependency resolution", 0, 0, 0, 0, 0, 0, $"  - {key}");
             }
 
             // Build a dependency graph
@@ -621,15 +616,15 @@ namespace SimulationTest.Core
                     dependencyGraph[fullyQualifiedName] = new List<string>(testMethod.Attribute.Dependencies);
 
                     // Log dependencies
-                    Console.WriteLine($"Test {fullyQualifiedName} depends on:");
+                    ReportProgress("Test dependencies", 0, 0, 0, 0, 0, 0, $"Test {fullyQualifiedName} depends on:");
                     foreach (var dep in testMethod.Attribute.Dependencies)
                     {
-                        Console.WriteLine($"  - {dep}");
+                        ReportProgress("Test dependencies", 0, 0, 0, 0, 0, 0, $"  - {dep}");
 
                         // Check if the dependency exists
                         if (!testMethodMap.ContainsKey(dep))
                         {
-                            Console.WriteLine($"WARNING: Dependency {dep} not found in available tests!");
+                            ReportProgress("Test dependencies", 0, 0, 0, 0, 0, 0, $"WARNING: Dependency {dep} not found in available tests!");
 
                             // Try with namespace
                             string[] parts = dep.Split('.');
@@ -644,7 +639,7 @@ namespace SimulationTest.Core
 
                                 if (matchingTests.Any())
                                 {
-                                    Console.WriteLine($"  Found matching test without full namespace: {matchingTests.First().ClassType.FullName}.{matchingTests.First().Method.Name}");
+                                    ReportProgress("Test dependencies", 0, 0, 0, 0, 0, 0, $"  Found matching test without full namespace: {matchingTests.First().ClassType.FullName}.{matchingTests.First().Method.Name}");
                                 }
                             }
                         }
@@ -671,11 +666,11 @@ namespace SimulationTest.Core
             }
 
             // Log the ordered tests
-            Console.WriteLine("Ordered tests:");
+            ReportProgress("Ordered tests", 0, 0, 0, 0, 0, 0, "Ordered tests:");
             for (int i = 0; i < orderedTests.Count; i++)
             {
                 var testMethod = orderedTests[i];
-                Console.WriteLine($"  {i + 1}. {testMethod.ClassType.FullName}.{testMethod.Method.Name}");
+                ReportProgress("Ordered tests", 0, 0, 0, 0, 0, 0, $"  {i + 1}. {testMethod.ClassType.FullName}.{testMethod.Method.Name}");
             }
 
             return orderedTests;
@@ -695,7 +690,7 @@ namespace SimulationTest.Core
             if (currentPath.Contains(node))
             {
                 // We have a circular dependency
-                Console.WriteLine($"WARNING: Circular dependency detected involving {node}");
+                ReportProgress("Circular dependency", 0, 0, 0, 0, 0, 0, $"WARNING: Circular dependency detected involving {node}");
                 return;
             }
 
@@ -729,12 +724,12 @@ namespace SimulationTest.Core
 
                             if (!string.IsNullOrEmpty(match.Key))
                             {
-                                Console.WriteLine($"Resolved dependency {dependency} to {match.Key}");
+                                ReportProgress("Resolved dependency", 0, 0, 0, 0, 0, 0, $"Resolved dependency {dependency} to {match.Key}");
                                 VisitNode(match.Key, dependencyGraph, visited, orderedTests, testMethodMap, currentPath);
                             }
                             else
                             {
-                                Console.WriteLine($"ERROR: Required dependency {dependency} not found!");
+                                ReportProgress("Error", 0, 0, 0, 0, 0, 0, $"ERROR: Required dependency {dependency} not found!");
                             }
                         }
                     }
@@ -768,11 +763,11 @@ namespace SimulationTest.Core
                     {
                         Directory.Delete(dir, true);
                     }
-                    Console.WriteLine("Coverage files cleaned up.");
+                    ReportProgress("Coverage files cleaned up", 0, 0, 0, 0, 0, 0, "Coverage files cleaned up.");
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Warning: Could not clean up coverage files: {ex.Message}");
+                    ReportProgress("Warning", 0, 0, 0, 0, 0, 0, $"Warning: Could not clean up coverage files: {ex.Message}");
                 }
             }
         }

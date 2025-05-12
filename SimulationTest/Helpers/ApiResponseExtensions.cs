@@ -4,6 +4,7 @@ using System.Diagnostics;
 using SimulationTest.Core;
 using CommonLib.Models;
 using System.Linq;
+using System.Runtime.CompilerServices;
 
 namespace SimulationTest.Helpers
 {
@@ -19,11 +20,13 @@ namespace SimulationTest.Helpers
         /// <param name="collection">The collection to check</param>
         /// <param name="stopwatch">Stopwatch for timing</param>
         /// <param name="errorMessage">Optional custom error message</param>
+        /// <param name="callerMemberName">Name of the calling method</param>
         /// <returns>ApiTestResult indicating success or failure</returns>
         public static ApiTestResult ShouldNotBeEmpty<T>(
             this ICollection<T> collection,
             Stopwatch stopwatch,
-            string errorMessage = null)
+            string errorMessage = null,
+            [CallerMemberName] string callerMemberName = null)
         {
             // First validate the response
             var baseResult = ApiResponseValidator.ValidateResponse(collection, stopwatch);
@@ -35,12 +38,13 @@ namespace SimulationTest.Helpers
             if (collection.Count == 0)
             {
                 return ApiTestResult.Failed(
+                    callerMemberName,
                     errorMessage ?? "Collection is empty",
                     null,
                     stopwatch.Elapsed);
             }
 
-            return ApiTestResult.Passed(stopwatch.Elapsed);
+            return ApiTestResult.Passed(callerMemberName, stopwatch.Elapsed);
         }
 
         /// <summary>
@@ -51,12 +55,14 @@ namespace SimulationTest.Helpers
         /// <param name="predicate">The condition items should meet</param>
         /// <param name="stopwatch">Stopwatch for timing</param>
         /// <param name="errorMessage">Optional custom error message</param>
+        /// <param name="callerMemberName">Name of the calling method</param>
         /// <returns>ApiTestResult indicating success or failure</returns>
         public static ApiTestResult ShouldContain<T>(
             this ICollection<T> collection,
             Func<T, bool> predicate,
             Stopwatch stopwatch,
-            string errorMessage = null)
+            string errorMessage = null,
+            [CallerMemberName] string callerMemberName = null)
         {
             // First validate the collection is not empty
             var emptyCheckResult = collection.ShouldNotBeEmpty(stopwatch);
@@ -69,12 +75,13 @@ namespace SimulationTest.Helpers
             if (!collection.Any(predicate))
             {
                 return ApiTestResult.Failed(
+                    callerMemberName,
                     errorMessage ?? "Collection does not contain an item matching the specified criteria",
                     null,
                     stopwatch.Elapsed);
             }
 
-            return ApiTestResult.Passed(stopwatch.Elapsed);
+            return ApiTestResult.Passed(callerMemberName, stopwatch.Elapsed);
         }
 
         /// <summary>
@@ -84,11 +91,13 @@ namespace SimulationTest.Helpers
         /// <param name="paginatedResult">The paginated result to check</param>
         /// <param name="stopwatch">Stopwatch for timing</param>
         /// <param name="errorMessage">Optional custom error message</param>
+        /// <param name="callerMemberName">Name of the calling method</param>
         /// <returns>ApiTestResult indicating success or failure</returns>
         public static ApiTestResult ShouldHaveItems<T>(
             this PaginatedResult<T> paginatedResult,
             Stopwatch stopwatch,
-            string errorMessage = null) where T : class
+            string errorMessage = null,
+            [CallerMemberName] string callerMemberName = null) where T : class
         {
             // First validate the paginated result structure
             var baseResult = ApiResponseValidator.ValidateResponse(paginatedResult, stopwatch);
@@ -100,6 +109,7 @@ namespace SimulationTest.Helpers
             if (paginatedResult.Items == null)
             {
                 return ApiTestResult.Failed(
+                    callerMemberName,
                     "Items collection is null in paginated result",
                     null,
                     stopwatch.Elapsed);
@@ -109,12 +119,13 @@ namespace SimulationTest.Helpers
             if (items.Count == 0 && paginatedResult.TotalItems > 0)
             {
                 return ApiTestResult.Failed(
+                    callerMemberName,
                     errorMessage ?? "Paginated result claims to have items but the Items collection is empty",
                     null,
                     stopwatch.Elapsed);
             }
 
-            return ApiTestResult.Passed(stopwatch.Elapsed);
+            return ApiTestResult.Passed(callerMemberName, stopwatch.Elapsed);
         }
 
         /// <summary>
@@ -126,17 +137,28 @@ namespace SimulationTest.Helpers
         /// <param name="propertyName">The name of the property to check</param>
         /// <param name="expectedValue">The expected value</param>
         /// <param name="stopwatch">Stopwatch for timing</param>
+        /// <param name="callerMemberName">Name of the calling method</param>
         /// <returns>ApiTestResult indicating success or failure</returns>
         public static ApiTestResult ShouldHaveProperty<T, TProperty>(
             this T response,
             string propertyName,
             TProperty expectedValue,
-            Stopwatch stopwatch)
+            Stopwatch stopwatch,
+            [CallerMemberName] string callerMemberName = null)
         {
-            return ApiResponseValidator.ValidateFieldValues(
+            // Create result from ValidateFieldValues and add testName if needed
+            var result = ApiResponseValidator.ValidateFieldValues(
                 response,
                 new Dictionary<string, object> { { propertyName, expectedValue } },
                 stopwatch);
+
+            // If result doesn't have a test name, set it
+            if (string.IsNullOrEmpty(result.TestName))
+            {
+                result.TestName = callerMemberName;
+            }
+
+            return result;
         }
 
         /// <summary>
@@ -147,12 +169,14 @@ namespace SimulationTest.Helpers
         /// <param name="stopwatch">Stopwatch for timing</param>
         /// <param name="maxAcceptableMs">Maximum acceptable response time in milliseconds</param>
         /// <param name="errorMessage">Optional custom error message</param>
+        /// <param name="callerMemberName">Name of the calling method</param>
         /// <returns>ApiTestResult indicating success or failure</returns>
         public static ApiTestResult ShouldRespondWithin<T>(
             this T response,
             Stopwatch stopwatch,
             int maxAcceptableMs = 5000,
-            string errorMessage = null)
+            string errorMessage = null,
+            [CallerMemberName] string callerMemberName = null)
         {
             // First validate the response itself
             var baseResult = ApiResponseValidator.ValidateResponse(response, stopwatch);
@@ -165,12 +189,13 @@ namespace SimulationTest.Helpers
             if (stopwatch.ElapsedMilliseconds > maxAcceptableMs)
             {
                 return ApiTestResult.Failed(
+                    callerMemberName,
                     errorMessage ?? $"Response time exceeded acceptable limit of {maxAcceptableMs}ms (actual: {stopwatch.ElapsedMilliseconds}ms)",
                     null,
                     stopwatch.Elapsed);
             }
 
-            return ApiTestResult.Passed(stopwatch.Elapsed);
+            return ApiTestResult.Passed(callerMemberName, stopwatch.Elapsed);
         }
     }
 }

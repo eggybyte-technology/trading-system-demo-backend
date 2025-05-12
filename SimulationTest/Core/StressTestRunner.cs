@@ -47,6 +47,12 @@ namespace SimulationTest.Core
         private readonly IProgress<TestProgress> _progress;
         private readonly string _testFolderPath;
 
+        // Additional tracking for real-time metrics
+        private readonly ConcurrentBag<double> _recentLatencies = new ConcurrentBag<double>();
+        private int _recentSuccessfulRequests = 0;
+        private int _recentFailedRequests = 0;
+        private readonly object _metricsLock = new object();
+
         /// <summary>
         /// Initializes a new instance of the StressTestRunner class
         /// </summary>
@@ -203,11 +209,16 @@ namespace SimulationTest.Core
                     (0, 50) // Request delay range
                 );
 
-                UpdateProgress("Submitting orders...", 30, 0, users.Count * _ordersPerUser);
-
-                // Calculate total operations
+                // Calculate total operations and start progress display
                 int totalOperations = users.Count * _ordersPerUser;
-                int completedOperations = 0;
+                UpdateProgress("Submitting orders...", 30, 0, totalOperations);
+
+                // Reset counters before processing orders
+                _successfulRequests = 0;
+                _failedRequests = 0;
+                _recentSuccessfulRequests = 0;
+                _recentFailedRequests = 0;
+                _recentLatencies.Clear();
 
                 // Process users in batches to control concurrency
                 var batchSize = Math.Min(_concurrency, users.Count);
@@ -224,20 +235,32 @@ namespace SimulationTest.Core
                         {
                             try
                             {
-                                // Choose simulation mode
+                                // Create an event handler for order processing
+                                var orderProcessed = new EventHandler<(bool success, double latencyMs)>((sender, data) =>
+                                {
+                                    // Record metrics for real-time reporting
+                                    if (data.success)
+                                    {
+                                        RecordSuccess(data.latencyMs);
+                                    }
+                                    else
+                                    {
+                                        RecordFailure();
+                                    }
+                                });
+
+                                // Pass the event handler to the order service
                                 if (_simulationMode.Equals("market", StringComparison.OrdinalIgnoreCase))
                                 {
-                                    await orderService.SubmitMarketOrdersAsync(user, _ordersPerUser, null, false, false);
+                                    await orderService.SubmitMarketOrdersAsync(user, _ordersPerUser, null, false, false, orderProcessed);
                                 }
                                 else // Default to random mode
                                 {
-                                    await orderService.SubmitRandomOrdersAsync(user, _ordersPerUser, null, false, false);
+                                    await orderService.SubmitRandomOrdersAsync(user, _ordersPerUser, null, false, false, orderProcessed);
                                 }
 
-                                // Update progress
-                                Interlocked.Add(ref completedOperations, _ordersPerUser);
-                                var progressPercent = 30 + (int)((float)completedOperations / totalOperations * 60);
-                                UpdateProgress($"Processed {completedOperations} of {totalOperations} orders", progressPercent, completedOperations, totalOperations);
+                                // No need to update progress here as each individual order completion
+                                // will trigger a progress update via the RecordSuccess/RecordFailure methods
                             }
                             catch (Exception ex)
                             {
@@ -252,21 +275,10 @@ namespace SimulationTest.Core
 
                 stopwatch.Stop();
 
-                // Get results from order service
-                _totalRequests = orderService.TotalOperations;
-                _successfulRequests = orderService.SuccessCount;
-                _failedRequests = orderService.FailureCount;
+                // Total requests is the sum of successful and failed requests
+                _totalRequests = _successfulRequests + _failedRequests;
 
-                // Get latencies
-                foreach (var latency in orderService.Latencies)
-                {
-                    _results.Add(new RequestResult
-                    {
-                        Success = true,
-                        Duration = TimeSpan.FromMilliseconds(latency),
-                        StatusCode = 200
-                    });
-                }
+                // The individual latencies and results have already been recorded by RecordSuccess/RecordFailure
 
                 _endTime = DateTime.Now;
                 var elapsedTime = _endTime - _startTime;
@@ -373,6 +385,96 @@ namespace SimulationTest.Core
                 Total = total
             });
         }
+
+        /// <summary>
+        /// Gets the current success rate based on completed operations
+        /// </summary>
+        /// <returns>The success rate as a percentage</returns>
+        public double GetCurrentSuccessRate()
+        {
+            int successCount = _recentSuccessfulRequests;
+            int totalCount = successCount + _recentFailedRequests;
+
+            if (totalCount == 0)
+                return 100.0; // No requests yet
+
+            return (double)successCount / totalCount * 100.0;
+        }
+
+        /// <summary>
+        /// Gets the current average latency based on completed operations
+        /// </summary>
+        /// <returns>The average latency in milliseconds</returns>
+        public double GetCurrentAverageLatency()
+        {
+            if (_recentLatencies.IsEmpty)
+                return 0.0;
+
+            return _recentLatencies.Average();
+        }
+
+        /// <summary>
+        /// Records a successful operation with its latency
+        /// </summary>
+        /// <param name="latencyMs">The latency in milliseconds</param>
+        private void RecordSuccess(double latencyMs)
+        {
+            // Update both the total and recent counters
+            Interlocked.Increment(ref _successfulRequests);
+            Interlocked.Increment(ref _recentSuccessfulRequests);
+            _results.Add(new RequestResult { Success = true, Duration = TimeSpan.FromMilliseconds(latencyMs), StatusCode = 200 });
+            _recentLatencies.Add(latencyMs);
+
+            // Keep the latency collection from growing too large
+            if (_recentLatencies.Count > 1000)
+            {
+                // Just allow it to reset for simplicity
+                var newLatencies = new ConcurrentBag<double>();
+                _recentLatencies.Take(100).ToList().ForEach(l => newLatencies.Add(l));
+                // We don't need to worry about thread safety here as this is just for UI display
+            }
+
+            // Update progress to reflect this completed operation
+            UpdateOrderProgress();
+        }
+
+        /// <summary>
+        /// Records a failed operation
+        /// </summary>
+        private void RecordFailure()
+        {
+            // Update both the total and recent counters
+            Interlocked.Increment(ref _failedRequests);
+            Interlocked.Increment(ref _recentFailedRequests);
+
+            // Update progress to reflect this completed operation
+            UpdateOrderProgress();
+        }
+
+        /// <summary>
+        /// Updates the progress display with the latest order completion information
+        /// </summary>
+        private void UpdateOrderProgress()
+        {
+            // Calculate total completed operations
+            int completed = _successfulRequests + _failedRequests;
+            int total = _userCount * _ordersPerUser;
+
+            // Calculate percentage (from 30% to 90%)
+            int progressPercent = 30 + (int)((float)completed / total * 60);
+
+            // Update progress
+            UpdateProgress($"Submitting orders...", progressPercent, completed, total);
+        }
+
+        /// <summary>
+        /// Gets the number of operations completed so far
+        /// </summary>
+        /// <returns>The count of completed operations</returns>
+        public int GetCompletedOperations()
+        {
+            return _successfulRequests + _failedRequests;
+        }
     }
 
     /// <summary>
@@ -395,6 +497,12 @@ namespace SimulationTest.Core
         public int Percentage { get; set; }
         public int Completed { get; set; }
         public int Total { get; set; }
+
+        // Additional properties for detailed reporting
+        public int Passed { get; set; } = -1;
+        public int Failed { get; set; } = -1;
+        public int Skipped { get; set; } = -1;
+        public string LogMessage { get; set; }
     }
 
     /// <summary>

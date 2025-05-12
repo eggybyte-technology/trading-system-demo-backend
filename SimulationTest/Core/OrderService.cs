@@ -114,7 +114,14 @@ namespace SimulationTest.Core
         /// <param name="ctx">Status context for progress reporting</param>
         /// <param name="verbose">Whether to log verbose messages</param>
         /// <param name="consoleOutput">Whether to output to console</param>
-        public async Task SubmitRandomOrdersAsync(UserCredential user, int numOrders, StatusContext? ctx, bool verbose, bool consoleOutput = true)
+        /// <param name="orderProcessedHandler">Event handler for when an order is processed</param>
+        public async Task SubmitRandomOrdersAsync(
+            UserCredential user,
+            int numOrders,
+            StatusContext? ctx,
+            bool verbose,
+            bool consoleOutput = true,
+            EventHandler<(bool success, double latencyMs)>? orderProcessedHandler = null)
         {
             int userOrdersSubmitted = 0;
             int userOrdersSucceeded = 0;
@@ -162,13 +169,15 @@ namespace SimulationTest.Core
                     var stopwatch = Stopwatch.StartNew();
                     var response = await httpClient.PostAsJsonAsync("/order", orderRequest);
                     stopwatch.Stop();
-                    _latencies.Add(stopwatch.ElapsedMilliseconds);
+                    var latencyMs = stopwatch.ElapsedMilliseconds;
+                    _latencies.Add(latencyMs);
 
                     // Process response
                     await ProcessResponseAsync(response, orderRequest, user, verbose, consoleOutput);
 
                     // Update counters based on success/failure
-                    if (response.IsSuccessStatusCode)
+                    bool isSuccess = response.IsSuccessStatusCode;
+                    if (isSuccess)
                     {
                         Interlocked.Increment(ref _successCount);
                         userOrdersSucceeded++;
@@ -183,6 +192,9 @@ namespace SimulationTest.Core
                     {
                         Interlocked.Increment(ref _failureCount);
                     }
+
+                    // Invoke the order processed handler if provided
+                    orderProcessedHandler?.Invoke(this, (isSuccess, latencyMs));
                 }
                 catch (Exception ex)
                 {
@@ -194,6 +206,9 @@ namespace SimulationTest.Core
                     }
 
                     Interlocked.Increment(ref _failureCount);
+
+                    // Invoke the order processed handler with failure if provided
+                    orderProcessedHandler?.Invoke(this, (false, 0));
                 }
                 finally
                 {
@@ -226,7 +241,14 @@ namespace SimulationTest.Core
         /// <param name="ctx">Status context for progress reporting</param>
         /// <param name="verbose">Whether to log verbose messages</param>
         /// <param name="consoleOutput">Whether to output to console</param>
-        public async Task SubmitMarketOrdersAsync(UserCredential user, int numOrders, StatusContext? ctx, bool verbose, bool consoleOutput = true)
+        /// <param name="orderProcessedHandler">Event handler for when an order is processed</param>
+        public async Task SubmitMarketOrdersAsync(
+            UserCredential user,
+            int numOrders,
+            StatusContext? ctx,
+            bool verbose,
+            bool consoleOutput = true,
+            EventHandler<(bool success, double latencyMs)>? orderProcessedHandler = null)
         {
             int userOrdersSubmitted = 0;
             int userOrdersSucceeded = 0;
@@ -274,13 +296,15 @@ namespace SimulationTest.Core
                     var stopwatch = Stopwatch.StartNew();
                     var response = await httpClient.PostAsJsonAsync("/order", orderRequest);
                     stopwatch.Stop();
-                    _latencies.Add(stopwatch.ElapsedMilliseconds);
+                    var latencyMs = stopwatch.ElapsedMilliseconds;
+                    _latencies.Add(latencyMs);
 
                     // Process the response
                     await ProcessResponseAsync(response, orderRequest, user, verbose, consoleOutput);
 
                     // Update counters based on success/failure
-                    if (response.IsSuccessStatusCode)
+                    bool isSuccess = response.IsSuccessStatusCode;
+                    if (isSuccess)
                     {
                         Interlocked.Increment(ref _successCount);
                         userOrdersSucceeded++;
@@ -295,6 +319,9 @@ namespace SimulationTest.Core
                     {
                         Interlocked.Increment(ref _failureCount);
                     }
+
+                    // Invoke the order processed handler if provided
+                    orderProcessedHandler?.Invoke(this, (isSuccess, latencyMs));
                 }
                 catch (Exception ex)
                 {
@@ -306,6 +333,9 @@ namespace SimulationTest.Core
                     }
 
                     Interlocked.Increment(ref _failureCount);
+
+                    // Invoke the order processed handler with failure if provided
+                    orderProcessedHandler?.Invoke(this, (false, 0));
                 }
                 finally
                 {

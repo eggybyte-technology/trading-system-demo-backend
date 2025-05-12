@@ -5,6 +5,7 @@ using System.Text.Json;
 using CommonLib.Models;
 using SimulationTest.Core;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 
 namespace SimulationTest.Helpers
 {
@@ -19,13 +20,15 @@ namespace SimulationTest.Helpers
         /// <typeparam name="T">The expected response type</typeparam>
         /// <param name="response">The response object</param>
         /// <param name="stopwatch">Stopwatch for timing</param>
+        /// <param name="callerMemberName">Name of the calling method</param>
         /// <returns>ApiTestResult indicating success or failure</returns>
-        public static ApiTestResult ValidateResponse<T>(T response, Stopwatch stopwatch)
+        public static ApiTestResult ValidateResponse<T>(T response, Stopwatch stopwatch, [CallerMemberName] string callerMemberName = null)
         {
             // Basic null check
             if (response == null)
             {
                 return ApiTestResult.Failed(
+                    callerMemberName,
                     $"Response is null",
                     null,
                     stopwatch.Elapsed);
@@ -35,7 +38,7 @@ namespace SimulationTest.Helpers
             if (response is IEnumerable<object> collection)
             {
                 // Empty collections are generally valid, but can be checked by caller
-                return ApiTestResult.Passed(stopwatch.Elapsed);
+                return ApiTestResult.Passed(callerMemberName, stopwatch.Elapsed);
             }
 
             // Handle paginated results
@@ -44,13 +47,14 @@ namespace SimulationTest.Helpers
                 if (paginatedResult.Items == null)
                 {
                     return ApiTestResult.Failed(
+                        callerMemberName,
                         "Paginated items collection is null",
                         null,
                         stopwatch.Elapsed);
                 }
 
                 // Empty paginated results are valid
-                return ApiTestResult.Passed(stopwatch.Elapsed);
+                return ApiTestResult.Passed(callerMemberName, stopwatch.Elapsed);
             }
 
             // Handle common empty container types
@@ -66,13 +70,14 @@ namespace SimulationTest.Helpers
             if (nullCollectionProperties.Any())
             {
                 return ApiTestResult.Failed(
+                    callerMemberName,
                     $"The following collection properties are null: {string.Join(", ", nullCollectionProperties.Select(p => p.Name))}",
                     null,
                     stopwatch.Elapsed);
             }
 
             // Basic successful response
-            return ApiTestResult.Passed(stopwatch.Elapsed);
+            return ApiTestResult.Passed(callerMemberName, stopwatch.Elapsed);
         }
 
         /// <summary>
@@ -82,14 +87,16 @@ namespace SimulationTest.Helpers
         /// <param name="response">The response object</param>
         /// <param name="fieldChecks">Dictionary of field name and expected value pairs</param>
         /// <param name="stopwatch">Stopwatch for timing</param>
+        /// <param name="callerMemberName">Name of the calling method</param>
         /// <returns>ApiTestResult indicating success or failure</returns>
         public static ApiTestResult ValidateFieldValues<T>(
             T response,
             Dictionary<string, object> fieldChecks,
-            Stopwatch stopwatch)
+            Stopwatch stopwatch,
+            [CallerMemberName] string callerMemberName = null)
         {
             // First do basic validation
-            var baseResult = ValidateResponse(response, stopwatch);
+            var baseResult = ValidateResponse(response, stopwatch, callerMemberName);
             if (!baseResult.Success)
             {
                 return baseResult;
@@ -102,6 +109,7 @@ namespace SimulationTest.Helpers
                 if (property == null)
                 {
                     return ApiTestResult.Failed(
+                        callerMemberName,
                         $"Property {check.Key} not found in type {typeof(T).Name}",
                         null,
                         stopwatch.Elapsed);
@@ -116,6 +124,7 @@ namespace SimulationTest.Helpers
                     if (longVal != intVal)
                     {
                         return ApiTestResult.Failed(
+                            callerMemberName,
                             $"Property {check.Key} expected value {expectedValue}, but was {actualValue}",
                             null,
                             stopwatch.Elapsed);
@@ -133,6 +142,7 @@ namespace SimulationTest.Helpers
                     if (Math.Abs(actual - expected) > 0.0001)
                     {
                         return ApiTestResult.Failed(
+                            callerMemberName,
                             $"Property {check.Key} expected value {expectedValue}, but was {actualValue}",
                             null,
                             stopwatch.Elapsed);
@@ -144,13 +154,14 @@ namespace SimulationTest.Helpers
                 if (!Equals(actualValue, expectedValue))
                 {
                     return ApiTestResult.Failed(
+                        callerMemberName,
                         $"Property {check.Key} expected value {expectedValue}, but was {actualValue}",
                         null,
                         stopwatch.Elapsed);
                 }
             }
 
-            return ApiTestResult.Passed(stopwatch.Elapsed);
+            return ApiTestResult.Passed(callerMemberName, stopwatch.Elapsed);
         }
 
         /// <summary>
@@ -161,16 +172,18 @@ namespace SimulationTest.Helpers
         /// <param name="expectedAsset">The expected asset</param>
         /// <param name="expectedAmount">The expected amount</param>
         /// <param name="stopwatch">Stopwatch for timing</param>
+        /// <param name="callerMemberName">Name of the calling method</param>
         /// <returns>ApiTestResult indicating success or failure</returns>
         public static ApiTestResult ValidateTransaction(
             object transaction,
             string expectedType,
             string expectedAsset,
             decimal expectedAmount,
-            Stopwatch stopwatch)
+            Stopwatch stopwatch,
+            [CallerMemberName] string callerMemberName = null)
         {
             // First do basic validation
-            var baseResult = ValidateResponse(transaction, stopwatch);
+            var baseResult = ValidateResponse(transaction, stopwatch, callerMemberName);
             if (!baseResult.Success)
             {
                 return baseResult;
@@ -184,6 +197,7 @@ namespace SimulationTest.Helpers
             if (typeProperty == null || assetProperty == null || amountProperty == null)
             {
                 return ApiTestResult.Failed(
+                    callerMemberName,
                     $"Transaction object is missing required properties",
                     null,
                     stopwatch.Elapsed);
@@ -197,6 +211,7 @@ namespace SimulationTest.Helpers
             if (type != expectedType)
             {
                 return ApiTestResult.Failed(
+                    callerMemberName,
                     $"Transaction type should be {expectedType}, but was {type}",
                     null,
                     stopwatch.Elapsed);
@@ -205,6 +220,7 @@ namespace SimulationTest.Helpers
             if (asset != expectedAsset)
             {
                 return ApiTestResult.Failed(
+                    callerMemberName,
                     $"Transaction asset should be {expectedAsset}, but was {asset}",
                     null,
                     stopwatch.Elapsed);
@@ -213,12 +229,13 @@ namespace SimulationTest.Helpers
             if (amount != expectedAmount)
             {
                 return ApiTestResult.Failed(
+                    callerMemberName,
                     $"Transaction amount should be {expectedAmount}, but was {amount}",
                     null,
                     stopwatch.Elapsed);
             }
 
-            return ApiTestResult.Passed(stopwatch.Elapsed);
+            return ApiTestResult.Passed(callerMemberName, stopwatch.Elapsed);
         }
 
         /// <summary>
@@ -229,12 +246,14 @@ namespace SimulationTest.Helpers
         /// <param name="expectedCode">The expected error code (optional)</param>
         /// <param name="expectedMessage">The expected error message substring (optional)</param>
         /// <param name="stopwatch">Stopwatch for timing</param>
+        /// <param name="callerMemberName">Name of the calling method</param>
         /// <returns>ApiTestResult indicating the validation result</returns>
         public static ApiTestResult ValidateErrorResponse<T>(
             T errorResponse,
             string expectedCode = null,
             string expectedMessage = null,
-            Stopwatch stopwatch = null)
+            Stopwatch stopwatch = null,
+            [CallerMemberName] string callerMemberName = null)
         {
             if (stopwatch == null)
             {
@@ -246,24 +265,25 @@ namespace SimulationTest.Helpers
             if (errorResponse == null)
             {
                 return ApiTestResult.Failed(
+                    callerMemberName,
                     "Error response is null",
                     null,
                     stopwatch.Elapsed);
             }
 
-            // Extract code and message using reflection
-            var codeProperty = typeof(T).GetProperty("Code");
+            // Get the message, code, and success properties
             var messageProperty = typeof(T).GetProperty("Message");
-            var successProperty = typeof(T).GetProperty("Success");
-
-            // Validate structure
             if (messageProperty == null)
             {
                 return ApiTestResult.Failed(
-                    "Error response does not contain a Message property",
+                    callerMemberName,
+                    "Error response does not have a Message property",
                     null,
                     stopwatch.Elapsed);
             }
+
+            var codeProperty = typeof(T).GetProperty("Code");
+            var successProperty = typeof(T).GetProperty("Success");
 
             // Get the values
             var actualMessage = messageProperty.GetValue(errorResponse)?.ToString();
@@ -276,6 +296,7 @@ namespace SimulationTest.Helpers
             if (isSuccess)
             {
                 return ApiTestResult.Failed(
+                    callerMemberName,
                     "Expected error response but Success=true",
                     null,
                     stopwatch.Elapsed);
@@ -285,6 +306,7 @@ namespace SimulationTest.Helpers
             if (!string.IsNullOrEmpty(expectedCode) && actualCode != expectedCode)
             {
                 return ApiTestResult.Failed(
+                    callerMemberName,
                     $"Expected error code {expectedCode}, but received {actualCode}",
                     null,
                     stopwatch.Elapsed);
@@ -295,12 +317,13 @@ namespace SimulationTest.Helpers
                 (string.IsNullOrEmpty(actualMessage) || !actualMessage.Contains(expectedMessage)))
             {
                 return ApiTestResult.Failed(
+                    callerMemberName,
                     $"Expected error message to contain '{expectedMessage}', but received '{actualMessage}'",
                     null,
                     stopwatch.Elapsed);
             }
 
-            return ApiTestResult.Passed(stopwatch.Elapsed);
+            return ApiTestResult.Passed(callerMemberName, stopwatch.Elapsed);
         }
     }
 }

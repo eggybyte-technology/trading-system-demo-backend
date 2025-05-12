@@ -3,6 +3,7 @@ using Microsoft.Extensions.Hosting;
 using CommonLib.Services;
 using MatchMakingService.Services;
 using MatchMakingService.Repositories;
+using System.Text.Json;
 
 namespace MatchMakingService
 {
@@ -26,6 +27,13 @@ namespace MatchMakingService
             Host.CreateDefaultBuilder(args)
                 .ConfigureServices((hostContext, services) =>
                 {
+                    // Configure JSON serialization to handle ObjectId
+                    services.AddControllers()
+                        .AddJsonOptions(options =>
+                        {
+                            options.JsonSerializerOptions.Converters.Add(new ObjectIdJsonConverter());
+                        });
+
                     // Add MongoDB connection
                     services.AddSingleton<MongoDbConnectionFactory>();
 

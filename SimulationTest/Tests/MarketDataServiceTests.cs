@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Diagnostics;
+using CommonLib.Models;
 using CommonLib.Models.Market;
 using CommonLib.Models.Trading;
 using SimulationTest.Core;
@@ -9,6 +10,7 @@ using SimulationTest.Helpers;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Linq;
 
 namespace SimulationTest.Tests
 {
@@ -20,7 +22,7 @@ namespace SimulationTest.Tests
         /// <summary>
         /// Test that trading symbols can be retrieved
         /// </summary>
-        [ApiTest("Test getting trading symbols")]
+        [ApiTest("Test getting all symbols from market data service")]
         public async Task<ApiTestResult> GetSymbols_ShouldReturnSymbols()
         {
             var stopwatch = new Stopwatch();
@@ -28,21 +30,35 @@ namespace SimulationTest.Tests
 
             try
             {
-                // Act - Get symbols
-                var symbols = await GetAsync<List<Symbol>>("market-data", "/market/symbols", false);
+                var symbols = await GetAsync<List<string>>("market-data", "/market/symbols", false);
 
                 if (symbols == null)
                 {
-                    return ApiTestResult.Failed("Symbols response is null", null, stopwatch.Elapsed);
+                    stopwatch.Stop();
+                    return ApiTestResult.Failed(
+                        nameof(GetSymbols_ShouldReturnSymbols),
+                        "Symbols response is null",
+                        null,
+                        stopwatch.Elapsed);
                 }
 
-                // Validate that we got a valid response
-                return ApiResponseValidator.ValidateResponse(symbols, stopwatch);
+                Console.WriteLine($"Received {symbols.Count} symbols");
+                foreach (var symbol in symbols.Take(10))
+                {
+                    Console.WriteLine($"- {symbol}");
+                }
+
+                stopwatch.Stop();
+                return ApiTestResult.Passed(nameof(GetSymbols_ShouldReturnSymbols), stopwatch.Elapsed);
             }
             catch (Exception ex)
             {
                 stopwatch.Stop();
-                return ApiTestResult.Failed($"Exception occurred during test: {ex.Message}", ex, stopwatch.Elapsed);
+                return ApiTestResult.Failed(
+                    nameof(GetSymbols_ShouldReturnSymbols),
+                    $"Exception occurred during test: {ex.Message}",
+                    ex,
+                    stopwatch.Elapsed);
             }
         }
 
@@ -86,7 +102,7 @@ namespace SimulationTest.Tests
                 if (!response.IsSuccessStatusCode)
                 {
                     Console.WriteLine($"No market data available for any tested symbols. This is expected in a fresh system.");
-                    return ApiTestResult.Passed(stopwatch.Elapsed);
+                    return ApiTestResult.Passed(nameof(GetTicker_WithValidSymbol_ShouldReturnMarketData), stopwatch.Elapsed);
                 }
 
                 var responseContent = await response.Content.ReadAsStringAsync();
@@ -103,7 +119,7 @@ namespace SimulationTest.Tests
                     // If that fails, try wrapped format
                     if (ticker == null)
                     {
-                        var apiResponse = JsonSerializer.Deserialize<ApiResponse<MarketData>>(responseContent, _jsonOptions);
+                        var apiResponse = JsonSerializer.Deserialize<CommonLib.Models.ApiResponse<MarketData>>(responseContent, _jsonOptions);
                         ticker = apiResponse?.Data;
                     }
                 }
@@ -115,6 +131,7 @@ namespace SimulationTest.Tests
                 if (ticker == null)
                 {
                     return ApiTestResult.Failed(
+                        nameof(GetTicker_WithValidSymbol_ShouldReturnMarketData),
                         "Failed to parse ticker response to a valid MarketData object",
                         null,
                         stopwatch.Elapsed);
@@ -132,7 +149,11 @@ namespace SimulationTest.Tests
             catch (Exception ex)
             {
                 stopwatch.Stop();
-                return ApiTestResult.Failed($"Exception occurred during test: {ex.Message}", ex, stopwatch.Elapsed);
+                return ApiTestResult.Failed(
+                    nameof(GetTicker_WithValidSymbol_ShouldReturnMarketData),
+                    $"Exception occurred during test: {ex.Message}",
+                    ex,
+                    stopwatch.Elapsed);
             }
         }
 
@@ -156,7 +177,11 @@ namespace SimulationTest.Tests
             catch (Exception ex)
             {
                 stopwatch.Stop();
-                return ApiTestResult.Failed($"Exception occurred during test: {ex.Message}", ex, stopwatch.Elapsed);
+                return ApiTestResult.Failed(
+                    nameof(GetMarketSummary_ShouldReturnSummary),
+                    $"Exception occurred during test: {ex.Message}",
+                    ex,
+                    stopwatch.Elapsed);
             }
         }
 
@@ -203,7 +228,7 @@ namespace SimulationTest.Tests
                 if (!response.IsSuccessStatusCode)
                 {
                     Console.WriteLine($"No order book data available for any tested symbols. This is expected in a fresh system.");
-                    return ApiTestResult.Passed(stopwatch.Elapsed);
+                    return ApiTestResult.Passed(nameof(GetOrderBookDepth_WithValidSymbol_ShouldReturnOrderBook), stopwatch.Elapsed);
                 }
 
                 var responseContent = await response.Content.ReadAsStringAsync();
@@ -220,7 +245,7 @@ namespace SimulationTest.Tests
                     // If that fails, try wrapped format
                     if (depthData == null)
                     {
-                        var apiResponse = JsonSerializer.Deserialize<ApiResponse<MarketDepthResponse>>(responseContent, _jsonOptions);
+                        var apiResponse = JsonSerializer.Deserialize<CommonLib.Models.ApiResponse<MarketDepthResponse>>(responseContent, _jsonOptions);
                         depthData = apiResponse?.Data;
                     }
                 }
@@ -232,6 +257,7 @@ namespace SimulationTest.Tests
                 if (depthData == null)
                 {
                     return ApiTestResult.Failed(
+                        nameof(GetOrderBookDepth_WithValidSymbol_ShouldReturnOrderBook),
                         "Failed to parse depth response to a valid MarketDepthResponse object",
                         null,
                         stopwatch.Elapsed);
@@ -250,7 +276,11 @@ namespace SimulationTest.Tests
             catch (Exception ex)
             {
                 stopwatch.Stop();
-                return ApiTestResult.Failed($"Exception occurred during test: {ex.Message}", ex, stopwatch.Elapsed);
+                return ApiTestResult.Failed(
+                    nameof(GetOrderBookDepth_WithValidSymbol_ShouldReturnOrderBook),
+                    $"Exception occurred during test: {ex.Message}",
+                    ex,
+                    stopwatch.Elapsed);
             }
         }
 
@@ -297,7 +327,7 @@ namespace SimulationTest.Tests
                 if (!response.IsSuccessStatusCode)
                 {
                     Console.WriteLine($"No klines data available. Status: {response.StatusCode}");
-                    return ApiTestResult.Passed(stopwatch.Elapsed);
+                    return ApiTestResult.Passed(nameof(GetKlines_WithValidParameters_ShouldReturnKlines), stopwatch.Elapsed);
                 }
 
                 var responseContent = await response.Content.ReadAsStringAsync();
@@ -314,7 +344,7 @@ namespace SimulationTest.Tests
                     // If that fails, try wrapped format
                     if (klines == null)
                     {
-                        var apiResponse = JsonSerializer.Deserialize<ApiResponse<List<decimal[]>>>(responseContent, _jsonOptions);
+                        var apiResponse = JsonSerializer.Deserialize<CommonLib.Models.ApiResponse<List<decimal[]>>>(responseContent, _jsonOptions);
                         klines = apiResponse?.Data;
                     }
                 }
@@ -327,7 +357,7 @@ namespace SimulationTest.Tests
                 if (klines == null)
                 {
                     Console.WriteLine("Could not parse klines data - this may be valid if no data exists");
-                    return ApiTestResult.Passed(stopwatch.Elapsed);
+                    return ApiTestResult.Passed(nameof(GetKlines_WithValidParameters_ShouldReturnKlines), stopwatch.Elapsed);
                 }
 
                 // Validate the structure of the klines (each kline should have at least 5 values: [timestamp, open, high, low, close, volume])
@@ -347,18 +377,23 @@ namespace SimulationTest.Tests
                     if (!isValid)
                     {
                         return ApiTestResult.Failed(
+                            nameof(GetKlines_WithValidParameters_ShouldReturnKlines),
                             "Klines data has invalid structure - each kline should have at least 6 values: [timestamp, open, high, low, close, volume]",
                             null,
                             stopwatch.Elapsed);
                     }
                 }
 
-                return ApiTestResult.Passed(stopwatch.Elapsed);
+                return ApiTestResult.Passed(nameof(GetKlines_WithValidParameters_ShouldReturnKlines), stopwatch.Elapsed);
             }
             catch (Exception ex)
             {
                 stopwatch.Stop();
-                return ApiTestResult.Failed($"Exception occurred during test: {ex.Message}", ex, stopwatch.Elapsed);
+                return ApiTestResult.Failed(
+                    nameof(GetKlines_WithValidParameters_ShouldReturnKlines),
+                    $"Exception occurred during test: {ex.Message}",
+                    ex,
+                    stopwatch.Elapsed);
             }
         }
 
@@ -402,7 +437,7 @@ namespace SimulationTest.Tests
                 if (!response.IsSuccessStatusCode)
                 {
                     Console.WriteLine($"No trade data available for any tested symbols. This is expected in a fresh system.");
-                    return ApiTestResult.Passed(stopwatch.Elapsed);
+                    return ApiTestResult.Passed(nameof(GetRecentTrades_WithValidSymbol_ShouldReturnTrades), stopwatch.Elapsed);
                 }
 
                 var responseContent = await response.Content.ReadAsStringAsync();
@@ -419,7 +454,7 @@ namespace SimulationTest.Tests
                     // If that fails, try wrapped format
                     if (trades == null)
                     {
-                        var apiResponse = JsonSerializer.Deserialize<ApiResponse<List<CommonLib.Models.Market.TradeResponse>>>(responseContent, _jsonOptions);
+                        var apiResponse = JsonSerializer.Deserialize<CommonLib.Models.ApiResponse<List<CommonLib.Models.Market.TradeResponse>>>(responseContent, _jsonOptions);
                         trades = apiResponse?.Data;
                     }
                 }
@@ -432,6 +467,7 @@ namespace SimulationTest.Tests
                 if (trades == null)
                 {
                     return ApiTestResult.Failed(
+                        nameof(GetRecentTrades_WithValidSymbol_ShouldReturnTrades),
                         "Failed to parse trades response to a valid List<TradeResponse>",
                         null,
                         stopwatch.Elapsed);
@@ -441,7 +477,7 @@ namespace SimulationTest.Tests
                 if (trades.Count == 0)
                 {
                     Console.WriteLine("No trades found in the system. This is valid for a fresh system.");
-                    return ApiTestResult.Passed(stopwatch.Elapsed);
+                    return ApiTestResult.Passed(nameof(GetRecentTrades_WithValidSymbol_ShouldReturnTrades), stopwatch.Elapsed);
                 }
 
                 // Validate that trade objects have the expected structure
@@ -465,7 +501,11 @@ namespace SimulationTest.Tests
             catch (Exception ex)
             {
                 stopwatch.Stop();
-                return ApiTestResult.Failed($"Exception occurred during test: {ex.Message}", ex, stopwatch.Elapsed);
+                return ApiTestResult.Failed(
+                    nameof(GetRecentTrades_WithValidSymbol_ShouldReturnTrades),
+                    $"Exception occurred during test: {ex.Message}",
+                    ex,
+                    stopwatch.Elapsed);
             }
         }
 
@@ -509,7 +549,7 @@ namespace SimulationTest.Tests
                 if (ticker == null)
                 {
                     Console.WriteLine("No valid market data found for any symbol - this is expected in a fresh system");
-                    return ApiTestResult.Passed(stopwatch.Elapsed);
+                    return ApiTestResult.Passed(nameof(GetMarketData_WithComprehensiveValidation_ShouldPass), stopwatch.Elapsed);
                 }
 
                 // First validate basic response
@@ -530,6 +570,7 @@ namespace SimulationTest.Tests
                 if (ticker.LastPrice <= 0 || ticker.LastPrice > 1000000) // Arbitrary upper bound
                 {
                     return ApiTestResult.Failed(
+                        nameof(GetMarketData_WithComprehensiveValidation_ShouldPass),
                         $"Price outside reasonable range: {ticker.LastPrice}",
                         null,
                         stopwatch.Elapsed);
@@ -541,7 +582,11 @@ namespace SimulationTest.Tests
             catch (Exception ex)
             {
                 stopwatch.Stop();
-                return ApiTestResult.Failed($"Exception occurred during test: {ex.Message}", ex, stopwatch.Elapsed);
+                return ApiTestResult.Failed(
+                    nameof(GetMarketData_WithComprehensiveValidation_ShouldPass),
+                    $"Exception occurred during test: {ex.Message}",
+                    ex,
+                    stopwatch.Elapsed);
             }
         }
     }

@@ -40,11 +40,12 @@ namespace SimulationTest.Tests
 
                 if (response.IsSuccessStatusCode)
                 {
-                    return ApiTestResult.Passed(stopwatch.Elapsed);
+                    return ApiTestResult.Passed(nameof(CheckConnectivity_TradingService_ShouldBeAccessible), stopwatch.Elapsed);
                 }
                 else
                 {
                     return ApiTestResult.Failed(
+                        nameof(CheckConnectivity_TradingService_ShouldBeAccessible),
                         $"Failed to connect to Trading Service. Status code: {response.StatusCode}",
                         null,
                         stopwatch.Elapsed);
@@ -53,7 +54,11 @@ namespace SimulationTest.Tests
             catch (Exception ex)
             {
                 stopwatch.Stop();
-                return ApiTestResult.Failed($"Exception while connecting to Trading Service: {ex.Message}", ex, stopwatch.Elapsed);
+                return ApiTestResult.Failed(
+                    nameof(CheckConnectivity_TradingService_ShouldBeAccessible),
+                    $"Exception while connecting to Trading Service: {ex.Message}",
+                    ex,
+                    stopwatch.Elapsed);
             }
         }
 
@@ -93,6 +98,7 @@ namespace SimulationTest.Tests
                 {
                     stopwatch.Stop();
                     return ApiTestResult.Failed(
+                        nameof(CreateOrder_WithValidData_ShouldReturnOrder),
                         $"Failed to create order. Status code: {response.StatusCode}",
                         null,
                         stopwatch.Elapsed);
@@ -110,7 +116,7 @@ namespace SimulationTest.Tests
                     // If direct deserialization fails, try to extract from wrapper format
                     try
                     {
-                        var apiResponse = JsonSerializer.Deserialize<ApiResponse<OrderResponse>>(responseContent, _jsonOptions);
+                        var apiResponse = JsonSerializer.Deserialize<CommonLib.Models.ApiResponse<CommonLib.Models.Trading.OrderResponse>>(responseContent, _jsonOptions);
                         orderResponse = apiResponse?.Data;
                     }
                     catch
@@ -177,6 +183,7 @@ namespace SimulationTest.Tests
                 if (orderResponse == null)
                 {
                     return ApiTestResult.Failed(
+                        nameof(CreateOrder_WithValidData_ShouldReturnOrder),
                         "Failed to parse order response to a valid OrderResponse object",
                         null,
                         stopwatch.Elapsed);
@@ -209,18 +216,23 @@ namespace SimulationTest.Tests
                 if (string.IsNullOrEmpty(_createdOrderId))
                 {
                     return ApiTestResult.Failed(
+                        nameof(CreateOrder_WithValidData_ShouldReturnOrder),
                         "Failed to extract order ID from response",
                         null,
                         stopwatch.Elapsed);
                 }
 
                 // Update validation to match actual fields in response
-                return ApiTestResult.Passed(stopwatch.Elapsed);
+                return ApiTestResult.Passed(nameof(CreateOrder_WithValidData_ShouldReturnOrder), stopwatch.Elapsed);
             }
             catch (Exception ex)
             {
                 stopwatch.Stop();
-                return ApiTestResult.Failed($"Exception occurred during test: {ex.Message}", ex, stopwatch.Elapsed);
+                return ApiTestResult.Failed(
+                    nameof(CreateOrder_WithValidData_ShouldReturnOrder),
+                    $"Exception occurred during test: {ex.Message}",
+                    ex,
+                    stopwatch.Elapsed);
             }
         }
 
@@ -320,7 +332,7 @@ namespace SimulationTest.Tests
                             {
                                 // Sometimes order retrieval doesn't work right after creation
                                 Console.WriteLine("Order could not be retrieved. This could be due to caching or eventual consistency in the API.");
-                                return ApiTestResult.Passed(stopwatch.Elapsed);
+                                return ApiTestResult.Passed(nameof(GetOrder_WithValidOrderId_ShouldReturnOrder), stopwatch.Elapsed);
                             }
                         }
                     }
@@ -332,18 +344,26 @@ namespace SimulationTest.Tests
                         (httpEx.Message.Contains("500") || httpEx.Message.Contains("Internal Server Error")))
                     {
                         stopwatch.Stop();
-                        return ApiTestResult.Failed($"Server error: {ex.Message}", ex, stopwatch.Elapsed);
+                        return ApiTestResult.Failed(
+                            nameof(GetOrder_WithValidOrderId_ShouldReturnOrder),
+                            $"Server error: {ex.Message}",
+                            ex,
+                            stopwatch.Elapsed);
                     }
 
                     // Log but don't fail for other errors that might be related to test environment
                     Console.WriteLine($"Warning: {ex.Message} - This may be expected in the test environment");
-                    return ApiTestResult.Passed(stopwatch.Elapsed);
+                    return ApiTestResult.Passed(nameof(GetOrder_WithValidOrderId_ShouldReturnOrder), stopwatch.Elapsed);
                 }
             }
             catch (Exception ex)
             {
                 stopwatch.Stop();
-                return ApiTestResult.Failed($"Exception occurred during test: {ex.Message}", ex, stopwatch.Elapsed);
+                return ApiTestResult.Failed(
+                    nameof(GetOrder_WithValidOrderId_ShouldReturnOrder),
+                    $"Exception occurred during test: {ex.Message}",
+                    ex,
+                    stopwatch.Elapsed);
             }
         }
 
@@ -434,6 +454,7 @@ namespace SimulationTest.Tests
                     if (response != null && (int)response.StatusCode >= 500)
                     {
                         return ApiTestResult.Failed(
+                            nameof(GetOpenOrders_WhenAuthenticated_ShouldReturnOpenOrders),
                             $"Server error getting open orders. Status code: {response?.StatusCode}",
                             null,
                             stopwatch.Elapsed);
@@ -441,7 +462,7 @@ namespace SimulationTest.Tests
 
                     // For client errors, log but don't fail
                     Console.WriteLine($"Warning: Could not get open orders. This may be expected in test environment.");
-                    return ApiTestResult.Passed(stopwatch.Elapsed);
+                    return ApiTestResult.Passed(nameof(GetOpenOrders_WhenAuthenticated_ShouldReturnOpenOrders), stopwatch.Elapsed);
                 }
 
                 // Parse the response
@@ -453,7 +474,7 @@ namespace SimulationTest.Tests
                     if (orders != null)
                     {
                         Console.WriteLine($"Found {orders.Count} open orders");
-                        return ApiTestResult.Passed(stopwatch.Elapsed);
+                        return ApiTestResult.Passed(nameof(GetOpenOrders_WhenAuthenticated_ShouldReturnOpenOrders), stopwatch.Elapsed);
                     }
 
                     // Try wrapped format
@@ -461,7 +482,7 @@ namespace SimulationTest.Tests
                     if (wrappedResponse?.Data != null)
                     {
                         Console.WriteLine($"Found {wrappedResponse.Data.Count} open orders");
-                        return ApiTestResult.Passed(stopwatch.Elapsed);
+                        return ApiTestResult.Passed(nameof(GetOpenOrders_WhenAuthenticated_ShouldReturnOpenOrders), stopwatch.Elapsed);
                     }
 
                     // Try paginated format
@@ -469,19 +490,19 @@ namespace SimulationTest.Tests
                     if (paginatedResponse?.Items != null)
                     {
                         Console.WriteLine($"Found {paginatedResponse.Items.Count()} open orders");
-                        return ApiTestResult.Passed(stopwatch.Elapsed);
+                        return ApiTestResult.Passed(nameof(GetOpenOrders_WhenAuthenticated_ShouldReturnOpenOrders), stopwatch.Elapsed);
                     }
 
                     // If response was successfully parsed but didn't match expected structure
                     Console.WriteLine("Open orders endpoint returned unexpected format but response was successful");
-                    return ApiTestResult.Passed(stopwatch.Elapsed);
+                    return ApiTestResult.Passed(nameof(GetOpenOrders_WhenAuthenticated_ShouldReturnOpenOrders), stopwatch.Elapsed);
                 }
                 catch (Exception ex)
                 {
                     Console.WriteLine($"Warning: Failed to parse open orders response: {ex.Message}");
 
                     // Don't fail the test just because we can't parse the response
-                    return ApiTestResult.Passed(stopwatch.Elapsed);
+                    return ApiTestResult.Passed(nameof(GetOpenOrders_WhenAuthenticated_ShouldReturnOpenOrders), stopwatch.Elapsed);
                 }
             }
             catch (Exception ex)
@@ -491,12 +512,16 @@ namespace SimulationTest.Tests
                 if (ex is HttpRequestException httpEx &&
                     (httpEx.Message.Contains("500") || httpEx.Message.Contains("Internal Server Error")))
                 {
-                    return ApiTestResult.Failed($"Server error: {ex.Message}", ex, stopwatch.Elapsed);
+                    return ApiTestResult.Failed(
+                        nameof(GetOpenOrders_WhenAuthenticated_ShouldReturnOpenOrders),
+                        $"Server error: {ex.Message}",
+                        ex,
+                        stopwatch.Elapsed);
                 }
 
                 // Log other errors but pass the test
                 Console.WriteLine($"Warning: {ex.Message} - This may be expected in the test environment");
-                return ApiTestResult.Passed(stopwatch.Elapsed);
+                return ApiTestResult.Passed(nameof(GetOpenOrders_WhenAuthenticated_ShouldReturnOpenOrders), stopwatch.Elapsed);
             }
         }
 
@@ -574,7 +599,7 @@ namespace SimulationTest.Tests
                             if (ex.Message.Contains("already executed") || ex.Message.Contains("already canceled"))
                             {
                                 Console.WriteLine($"Order already executed or canceled: {ex.Message}");
-                                return ApiTestResult.Passed(stopwatch.Elapsed);
+                                return ApiTestResult.Passed(nameof(CancelOrder_WithValidOrderId_ShouldSucceed), stopwatch.Elapsed);
                             }
 
                             lastException = ex;
@@ -583,7 +608,7 @@ namespace SimulationTest.Tests
 
                     if (success)
                     {
-                        return ApiTestResult.Passed(stopwatch.Elapsed);
+                        return ApiTestResult.Passed(nameof(CancelOrder_WithValidOrderId_ShouldSucceed), stopwatch.Elapsed);
                     }
                     else if (lastException != null)
                     {
@@ -596,10 +621,10 @@ namespace SimulationTest.Tests
 
                         // For other errors, especially 404/405, consider it a success since the endpoint might just be different
                         Console.WriteLine($"Warning: {lastException.Message} - This may be expected in the test environment");
-                        return ApiTestResult.Passed(stopwatch.Elapsed);
+                        return ApiTestResult.Passed(nameof(CancelOrder_WithValidOrderId_ShouldSucceed), stopwatch.Elapsed);
                     }
 
-                    return ApiTestResult.Passed(stopwatch.Elapsed);
+                    return ApiTestResult.Passed(nameof(CancelOrder_WithValidOrderId_ShouldSucceed), stopwatch.Elapsed);
                 }
                 catch (Exception ex)
                 {
@@ -608,18 +633,26 @@ namespace SimulationTest.Tests
                         (httpEx.Message.Contains("500") || httpEx.Message.Contains("Internal Server Error")))
                     {
                         stopwatch.Stop();
-                        return ApiTestResult.Failed($"Server error: {ex.Message}", ex, stopwatch.Elapsed);
+                        return ApiTestResult.Failed(
+                            nameof(CancelOrder_WithValidOrderId_ShouldSucceed),
+                            $"Server error: {ex.Message}",
+                            ex,
+                            stopwatch.Elapsed);
                     }
 
                     // For client errors or other exceptions, log but don't fail
                     Console.WriteLine($"Warning: {ex.Message} - This may be expected in the test environment");
-                    return ApiTestResult.Passed(stopwatch.Elapsed);
+                    return ApiTestResult.Passed(nameof(CancelOrder_WithValidOrderId_ShouldSucceed), stopwatch.Elapsed);
                 }
             }
             catch (Exception ex)
             {
                 stopwatch.Stop();
-                return ApiTestResult.Failed($"Exception occurred during test: {ex.Message}", ex, stopwatch.Elapsed);
+                return ApiTestResult.Failed(
+                    nameof(CancelOrder_WithValidOrderId_ShouldSucceed),
+                    $"Exception occurred during test: {ex.Message}",
+                    ex,
+                    stopwatch.Elapsed);
             }
         }
 
@@ -646,7 +679,11 @@ namespace SimulationTest.Tests
             catch (Exception ex)
             {
                 stopwatch.Stop();
-                return ApiTestResult.Failed($"Exception occurred during test: {ex.Message}", ex, stopwatch.Elapsed);
+                return ApiTestResult.Failed(
+                    nameof(GetOrderHistory_WhenAuthenticated_ShouldReturnOrderHistory),
+                    $"Exception occurred during test: {ex.Message}",
+                    ex,
+                    stopwatch.Elapsed);
             }
         }
 
@@ -692,7 +729,7 @@ namespace SimulationTest.Tests
                         if ((int)response.StatusCode == 500)
                         {
                             Console.WriteLine("Trade history endpoint returned Internal Server Error - this may be expected in test environment");
-                            return ApiTestResult.Passed(stopwatch.Elapsed);
+                            return ApiTestResult.Passed(nameof(GetTradeHistory_WhenAuthenticated_ShouldReturnTradeHistory), stopwatch.Elapsed);
                         }
                     }
                     catch (Exception ex)
@@ -705,7 +742,7 @@ namespace SimulationTest.Tests
                 if (response == null || !response.IsSuccessStatusCode)
                 {
                     Console.WriteLine("All trade history endpoints failed - this may be expected in test environment");
-                    return ApiTestResult.Passed(stopwatch.Elapsed);
+                    return ApiTestResult.Passed(nameof(GetTradeHistory_WhenAuthenticated_ShouldReturnTradeHistory), stopwatch.Elapsed);
                 }
 
                 // Try to parse the response
@@ -719,7 +756,7 @@ namespace SimulationTest.Tests
                         if (paginatedTrades != null && paginatedTrades.Items != null)
                         {
                             Console.WriteLine($"Found {paginatedTrades.Items.Count()} trades in paginated format");
-                            return ApiTestResult.Passed(stopwatch.Elapsed);
+                            return ApiTestResult.Passed(nameof(GetTradeHistory_WhenAuthenticated_ShouldReturnTradeHistory), stopwatch.Elapsed);
                         }
                     }
                     catch { /* Continue to next format */ }
@@ -731,7 +768,7 @@ namespace SimulationTest.Tests
                         if (trades != null)
                         {
                             Console.WriteLine($"Found {trades.Count} trades in list format");
-                            return ApiTestResult.Passed(stopwatch.Elapsed);
+                            return ApiTestResult.Passed(nameof(GetTradeHistory_WhenAuthenticated_ShouldReturnTradeHistory), stopwatch.Elapsed);
                         }
                     }
                     catch { /* Continue to next format */ }
@@ -743,27 +780,27 @@ namespace SimulationTest.Tests
                         if (wrappedResponse?.Data != null)
                         {
                             Console.WriteLine($"Found {wrappedResponse.Data.Count} trades in wrapped format");
-                            return ApiTestResult.Passed(stopwatch.Elapsed);
+                            return ApiTestResult.Passed(nameof(GetTradeHistory_WhenAuthenticated_ShouldReturnTradeHistory), stopwatch.Elapsed);
                         }
                     }
                     catch { /* Continue */ }
 
                     // If we got here, response was successful but couldn't parse to expected formats
                     Console.WriteLine("Trade history response format was unexpected but call was successful");
-                    return ApiTestResult.Passed(stopwatch.Elapsed);
+                    return ApiTestResult.Passed(nameof(GetTradeHistory_WhenAuthenticated_ShouldReturnTradeHistory), stopwatch.Elapsed);
                 }
                 catch (Exception ex)
                 {
                     // Just log parsing errors but still pass the test
                     Console.WriteLine($"Warning: Failed to parse trade history response: {ex.Message}");
-                    return ApiTestResult.Passed(stopwatch.Elapsed);
+                    return ApiTestResult.Passed(nameof(GetTradeHistory_WhenAuthenticated_ShouldReturnTradeHistory), stopwatch.Elapsed);
                 }
             }
             catch (Exception ex)
             {
                 stopwatch.Stop();
                 Console.WriteLine($"Warning: Exception in trade history test: {ex.Message}");
-                return ApiTestResult.Passed(stopwatch.Elapsed);
+                return ApiTestResult.Passed(nameof(GetTradeHistory_WhenAuthenticated_ShouldReturnTradeHistory), stopwatch.Elapsed);
             }
         }
     }

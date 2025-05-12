@@ -89,7 +89,7 @@ namespace CommonLib.Services
                 PropertyNameCaseInsensitive = true
             };
 
-            _jsonOptions.ConfigureMongoDbJsonOptions();
+            _jsonOptions.Converters.Add(new CommonLib.Services.ObjectIdJsonConverter());
         }
 
         /// <inheritdoc/>
