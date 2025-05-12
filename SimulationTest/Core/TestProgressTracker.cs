@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using Spectre.Console;
+using Spectre.Console.Rendering;
 
 namespace SimulationTest.Core
 {
@@ -24,155 +25,175 @@ namespace SimulationTest.Core
         /// <summary>
         /// Initializes a new instance of the TestProgressTracker class
         /// </summary>
-        /// <param name="totalTests">Total number of tests to run</param>
-        /// <param name="refreshIntervalMs">Refresh interval in milliseconds</param>
+        /// <param name="totalTests">The total number of tests that will be run</param>
+        /// <param name="refreshIntervalMs">The refresh interval in milliseconds</param>
         public TestProgressTracker(int totalTests, int refreshIntervalMs = 500)
         {
             _totalTests = totalTests;
-            _completedTests = 0;
-            _succeededTests = 0;
             _refreshIntervalMs = refreshIntervalMs;
         }
 
         /// <summary>
-        /// Starts displaying progress
+        /// Gets all latency measurements collected during test execution
+        /// </summary>
+        /// <returns>A collection of latency measurements</returns>
+        public IEnumerable<TimeSpan> GetLatencies()
+        {
+            return _latencies.ToArray();
+        }
+
+        /// <summary>
+        /// Starts tracking test progress
         /// </summary>
         public void StartTracking()
         {
-            _isDisplaying = true;
-            _refreshTimer = new Timer(UpdateDisplay, null, 0, _refreshIntervalMs);
+            lock (_lock)
+            {
+                if (_isDisplaying)
+                    return;
+
+                _isDisplaying = true;
+                _refreshTimer = new Timer(UpdateDisplay, null, 0, _refreshIntervalMs);
+            }
         }
 
         /// <summary>
-        /// Stops displaying progress
+        /// Updates the console display with the current progress
         /// </summary>
-        public void StopTracking()
+        private void UpdateDisplay(object state)
         {
-            _isDisplaying = false;
-            _refreshTimer?.Dispose();
+            if (!_isDisplaying)
+                return;
+
+            double percentComplete = _totalTests > 0
+                ? Math.Round(100.0 * _completedTests / _totalTests, 1)
+                : 0;
+
+            var avgLatency = _latencies.Count > 0
+                ? _latencies.Average(l => l.TotalMilliseconds)
+                : 0;
+
+            // Use explicit markup to avoid parsing errors
+            AnsiConsole.MarkupLine($"Progress: {_completedTests}/{_totalTests} ([green]{percentComplete}%[/])");
         }
 
         /// <summary>
-        /// Updates the test statistics with a completed test result
+        /// Updates the test results with a new test result
         /// </summary>
-        /// <param name="result">The test result</param>
+        /// <param name="result">The test result to add</param>
         public void UpdateTestResult(ApiTestResult result)
         {
             lock (_lock)
             {
                 _completedTests++;
-
                 if (result.Success)
-                {
                     _succeededTests++;
-                }
 
                 _latencies.Add(result.Duration);
             }
         }
 
         /// <summary>
-        /// Updates the display with current progress
+        /// Adds a latency measurement from an external source
         /// </summary>
-        private void UpdateDisplay(object state)
+        /// <param name="latency">The latency measurement to add</param>
+        public void AddLatency(TimeSpan latency)
         {
-            if (!_isDisplaying) return;
-
-            // Calculate progress values
-            double progressPercentage = (_totalTests > 0) ? (double)_completedTests / _totalTests * 100 : 0;
-            double successPercentage = (_completedTests > 0) ? (double)_succeededTests / _completedTests * 100 : 0;
-
-            // Calculate average latency
-            double avgLatencyMs = 0;
-            if (_latencies.Count > 0)
+            lock (_lock)
             {
-                avgLatencyMs = _latencies.Average(l => l.TotalMilliseconds);
+                _latencies.Add(latency);
             }
+        }
 
-            // Calculate latency percentage (100ms = 100%)
-            double latencyPercentage = Math.Min(avgLatencyMs / 100.0 * 100, 100);
-
-            // Clear the current line and write progress
-            int currentTop = Console.CursorTop;
-
-            try
+        /// <summary>
+        /// Updates the test counts directly
+        /// </summary>
+        /// <param name="completed">Number of completed tests</param>
+        /// <param name="succeeded">Number of succeeded tests</param>
+        public void UpdateTestCounts(int completed, int succeeded)
+        {
+            lock (_lock)
             {
-                // Save the current cursor position
-                Console.CursorVisible = false;
-
-                // Move to the bottom of the console and print progress
-                int maxConsoleRow = Math.Max(0, Console.WindowHeight - 4);
-                Console.SetCursorPosition(0, maxConsoleRow);
-
-                // Clear lines for progress display
-                for (int i = 0; i < 3; i++)
+                // If the completed test count from the running results is different,
+                // update our total based on the actual results
+                if (completed != _totalTests && completed > 0)
                 {
-                    Console.SetCursorPosition(0, maxConsoleRow + i);
-                    Console.Write(new string(' ', Console.WindowWidth - 1));
+                    _totalTests = completed;
                 }
 
-                // Draw progress bars using Spectre.Console markup
-                Console.SetCursorPosition(0, maxConsoleRow);
-                AnsiConsole.MarkupLine($"Progress: [blue]{_completedTests}/{_totalTests}[/] ([blue]{progressPercentage:F1}%[/])");
-                DrawProgressBar(progressPercentage);
-
-                Console.SetCursorPosition(0, maxConsoleRow + 1);
-                AnsiConsole.MarkupLine($"Success: [green]{_succeededTests}/{_completedTests}[/] ([green]{successPercentage:F1}%[/])");
-                DrawProgressBar(successPercentage);
-
-                Console.SetCursorPosition(0, maxConsoleRow + 2);
-                string latencyColor = avgLatencyMs < 50 ? "green" : (avgLatencyMs < 100 ? "yellow" : "red");
-                AnsiConsole.MarkupLine($"Avg Latency: [{latencyColor}]{avgLatencyMs:F0}ms[/]");
-                DrawProgressBar(latencyPercentage, latencyColor);
-            }
-            catch (Exception)
-            {
-                // Ignore any console rendering errors
-            }
-            finally
-            {
-                Console.CursorVisible = true;
+                _completedTests = completed;
+                _succeededTests = succeeded;
             }
         }
 
         /// <summary>
-        /// Draws a simple progress bar
+        /// Stops tracking test progress
         /// </summary>
-        private void DrawProgressBar(double percentage, string color = "blue")
+        public void StopTracking()
         {
-            int width = Math.Min(50, Console.WindowWidth - 5);
-            int filledWidth = (int)(width * percentage / 100);
+            lock (_lock)
+            {
+                if (!_isDisplaying)
+                    return;
 
-            AnsiConsole.Markup($"[{color}]");
-            AnsiConsole.Markup("[");
-            AnsiConsole.Markup(new string('=', filledWidth));
-            AnsiConsole.Markup(new string(' ', width - filledWidth));
-            AnsiConsole.Markup("]");
-            AnsiConsole.MarkupLine($"[/]");
+                _isDisplaying = false;
+                _refreshTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+                _refreshTimer?.Dispose();
+                _refreshTimer = null;
+            }
         }
 
         /// <summary>
-        /// Renders a final summary of the test run
+        /// Renders a summary of the test results
         /// </summary>
         public void RenderSummary()
         {
-            double successPercentage = (_completedTests > 0) ? (double)_succeededTests / _completedTests * 100 : 0;
-
-            // Calculate average latency
-            TimeSpan avgLatency = TimeSpan.Zero;
-            if (_latencies.Count > 0)
+            lock (_lock)
             {
-                avgLatency = TimeSpan.FromTicks((long)_latencies.Average(l => l.Ticks));
-            }
+                // Get average latency in milliseconds
+                var avgLatency = _latencies.Count > 0
+                    ? _latencies.Average(l => l.TotalMilliseconds)
+                    : 0;
 
-            AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine("[bold]Test Run Summary[/]");
-            AnsiConsole.WriteLine($"Total Tests: {_totalTests}");
-            AnsiConsole.WriteLine($"Completed: {_completedTests} ({(_completedTests / (double)_totalTests * 100):F1}%)");
-            AnsiConsole.WriteLine($"Succeeded: {_succeededTests} ({successPercentage:F1}%)");
-            AnsiConsole.WriteLine($"Failed: {_completedTests - _succeededTests}");
-            AnsiConsole.WriteLine($"Average Latency: {avgLatency.TotalMilliseconds:F2}ms");
-            AnsiConsole.WriteLine();
+                // Calculate percentage
+                double percentComplete = _totalTests > 0
+                    ? Math.Round(100.0 * _completedTests / _totalTests, 1)
+                    : 0;
+
+                // Calculate succeeded percentage
+                double succeededPercentage = _completedTests > 0
+                    ? Math.Round(100.0 * _succeededTests / _completedTests, 1)
+                    : 0;
+
+                // Calculate failed tests
+                int failedTests = _completedTests - _succeededTests;
+
+                // Create a table
+                var table = new Table();
+                table.Title = new TableTitle("Test Run Summary", new Style(Color.Yellow));
+                table.Border(TableBorder.Rounded);
+
+                // Add columns
+                table.AddColumn("Total Tests");
+                table.AddColumn("Completed");
+                table.AddColumn("Succeeded");
+                table.AddColumn("Failed");
+                table.AddColumn("Average Latency");
+
+                // Add a row with the summary data
+                table.AddRow(
+                    _totalTests.ToString(),
+                    $"{_completedTests} ({percentComplete}%)",
+                    $"{_succeededTests} ({succeededPercentage}%)",
+                    failedTests.ToString(),
+                    $"{avgLatency:F2}ms"
+                );
+
+                // Render the table
+                AnsiConsole.WriteLine();
+                AnsiConsole.Write(table);
+                AnsiConsole.WriteLine();
+            }
         }
     }
 }

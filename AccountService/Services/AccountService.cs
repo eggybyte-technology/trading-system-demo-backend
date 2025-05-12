@@ -150,7 +150,7 @@ namespace AccountService.Services
         }
 
         /// <inheritdoc/>
-        public async Task<WithdrawalRequest> CreateWithdrawalAsync(
+        public async Task<Withdrawal> CreateWithdrawalAsync(
             string userId,
             string asset,
             decimal amount,
@@ -173,7 +173,7 @@ namespace AccountService.Services
                 await LockFunds(account.Id, asset, amount);
 
                 // Create withdrawal request
-                var withdrawal = new WithdrawalRequest
+                var withdrawal = new Withdrawal
                 {
                     UserId = userObjectId,
                     Asset = asset,
@@ -181,11 +181,12 @@ namespace AccountService.Services
                     Address = address,
                     Memo = memo,
                     Status = "pending",
-                    CreatedAt = DateTime.UtcNow
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
                 };
 
                 // Save withdrawal request
-                var withdrawalCollection = _dbFactory.GetCollection<WithdrawalRequest>();
+                var withdrawalCollection = _dbFactory.GetCollection<Withdrawal>();
                 await withdrawalCollection.InsertOneAsync(withdrawal);
 
                 return withdrawal;
@@ -198,18 +199,18 @@ namespace AccountService.Services
         }
 
         /// <inheritdoc/>
-        public async Task<WithdrawalRequest?> GetWithdrawalByIdAsync(string userId, string withdrawalId)
+        public async Task<Withdrawal?> GetWithdrawalByIdAsync(string userId, string withdrawalId)
         {
             try
             {
                 var userObjectId = ObjectId.Parse(userId);
                 var withdrawalObjectId = ObjectId.Parse(withdrawalId);
 
-                var withdrawalCollection = _dbFactory.GetCollection<WithdrawalRequest>();
+                var withdrawalCollection = _dbFactory.GetCollection<Withdrawal>();
 
-                var filter = Builders<WithdrawalRequest>.Filter.And(
-                    Builders<WithdrawalRequest>.Filter.Eq(w => w.Id, withdrawalObjectId),
-                    Builders<WithdrawalRequest>.Filter.Eq(w => w.UserId, userObjectId)
+                var filter = Builders<Withdrawal>.Filter.And(
+                    Builders<Withdrawal>.Filter.Eq(w => w.Id, withdrawalObjectId),
+                    Builders<Withdrawal>.Filter.Eq(w => w.UserId, userObjectId)
                 );
 
                 return await withdrawalCollection.Find(filter).FirstOrDefaultAsync();

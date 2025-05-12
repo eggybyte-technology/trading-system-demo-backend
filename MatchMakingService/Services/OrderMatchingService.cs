@@ -72,8 +72,21 @@ namespace MatchMakingService.Services
         {
             try
             {
-                await _orderRepository.UnlockTimedOutOrdersAsync(_lockTimeoutSeconds, cancellationToken);
-                _logger.LogDebug("Checked for timed-out locked orders");
+                var cutoffTime = DateTime.UtcNow.AddSeconds(-_lockTimeoutSeconds);
+                _logger.LogDebug("Checking for locked orders with timeout > {TimeoutSeconds}s (locked before {CutoffTime})",
+                    _lockTimeoutSeconds, cutoffTime);
+
+                var unlockedCount = await _orderRepository.UnlockTimedOutOrdersAsync(_lockTimeoutSeconds, cancellationToken);
+
+                if (unlockedCount > 0)
+                {
+                    _logger.LogWarning("Found and unlocked {Count} timed-out orders that exceeded the lock timeout of {TimeoutSeconds}s",
+                        unlockedCount, _lockTimeoutSeconds);
+                }
+                else
+                {
+                    _logger.LogDebug("No timed-out locked orders found");
+                }
             }
             catch (Exception ex)
             {
@@ -86,21 +99,24 @@ namespace MatchMakingService.Services
         /// </summary>
         private async Task ProcessSymbolOrdersAsync(OrderMatcher matcher, CancellationToken cancellationToken)
         {
+            var processingStartTime = DateTime.UtcNow;
             // Create a new matching job
             var job = new MatchingJob
             {
                 Symbol = matcher.Symbol,
-                StartedAt = DateTime.UtcNow,
+                StartedAt = processingStartTime,
                 Status = "RUNNING"
             };
 
             await _jobRepository.CreateJobAsync(job, cancellationToken);
+            _logger.LogInformation("Starting matching job {JobId} for symbol {Symbol}", job.Id, matcher.Symbol);
 
             List<Order> buyOrders = new List<Order>();
             List<Order> sellOrders = new List<Order>();
 
             try
             {
+                var queryStartTime = DateTime.UtcNow;
                 // Get all active buy orders sorted by price (highest first) and time
                 buyOrders = await _orderRepository.GetActiveBuyOrdersAsync(
                     matcher.Symbol,
@@ -113,9 +129,17 @@ namespace MatchMakingService.Services
                     matcher.BatchSize,
                     cancellationToken);
 
+                var queryEndTime = DateTime.UtcNow;
+                var queryTimeMs = (long)(queryEndTime - queryStartTime).TotalMilliseconds;
+                _logger.LogDebug("Order query completed in {QueryTimeMs}ms - Found {BuyCount} buy orders and {SellCount} sell orders",
+                    queryTimeMs, buyOrders.Count, sellOrders.Count);
+
                 // If no orders to process, just return
                 if (buyOrders.Count == 0 || sellOrders.Count == 0)
                 {
+                    _logger.LogInformation("No matching possible for {Symbol} - Orders: Buy={BuyCount}, Sell={SellCount}",
+                        matcher.Symbol, buyOrders.Count, sellOrders.Count);
+
                     job.CompletedAt = DateTime.UtcNow;
                     job.Status = "COMPLETED";
                     job.OrdersProcessed = 0;
@@ -134,12 +158,18 @@ namespace MatchMakingService.Services
                 _logger.LogInformation("Locking {OrderCount} orders for matching for symbol {Symbol}",
                     allOrders.Count, matcher.Symbol);
 
+                var lockStartTime = DateTime.UtcNow;
                 await _orderRepository.LockOrdersAsync(allOrders, job.Id, cancellationToken);
+                var lockEndTime = DateTime.UtcNow;
+                var lockTimeMs = (long)(lockEndTime - lockStartTime).TotalMilliseconds;
+                _logger.LogDebug("Orders locked in {LockTimeMs}ms", lockTimeMs);
 
                 // Match orders
-                var startTime = DateTime.UtcNow;
+                var matchStartTime = DateTime.UtcNow;
                 var matchResults = MatchOrders(buyOrders, sellOrders);
-                var endTime = DateTime.UtcNow;
+                var matchEndTime = DateTime.UtcNow;
+                var matchTimeMs = (long)(matchEndTime - matchStartTime).TotalMilliseconds;
+                _logger.LogDebug("Order matching algorithm completed in {MatchTimeMs}ms", matchTimeMs);
 
                 // Process match results
                 if (matchResults.Count > 0)
@@ -151,29 +181,46 @@ namespace MatchMakingService.Services
 
                     if (ordersToUpdate.Count > 0)
                     {
+                        var updateStartTime = DateTime.UtcNow;
                         await _orderRepository.UpdateOrdersAsync(ordersToUpdate, cancellationToken);
+                        var updateEndTime = DateTime.UtcNow;
+                        var updateTimeMs = (long)(updateEndTime - updateStartTime).TotalMilliseconds;
+                        _logger.LogDebug("Updated {OrderCount} orders in {UpdateTimeMs}ms", ordersToUpdate.Count, updateTimeMs);
                     }
 
                     // Insert new trades
+                    var tradeStartTime = DateTime.UtcNow;
                     await _orderRepository.CreateTradesAsync(matchResults, cancellationToken);
+                    var tradeEndTime = DateTime.UtcNow;
+                    var tradeTimeMs = (long)(tradeEndTime - tradeStartTime).TotalMilliseconds;
+                    _logger.LogDebug("Created {TradeCount} trades in {TradeTimeMs}ms", matchResults.Count, tradeTimeMs);
 
                     // Update job with trade IDs
                     job.TradeIds = matchResults.Select(t => t.Id).ToList();
 
-                    _logger.LogInformation("Created {TradeCount} trades for symbol {Symbol}",
-                        matchResults.Count, matcher.Symbol);
+                    // Log detailed trade information
+                    var totalVolume = matchResults.Sum(t => t.Quantity * t.Price);
+                    var avgPrice = matchResults.Count > 0 ? totalVolume / matchResults.Sum(t => t.Quantity) : 0;
+                    _logger.LogInformation("Created {TradeCount} trades for symbol {Symbol} - Total volume: {Volume}, Avg price: {AvgPrice}",
+                        matchResults.Count, matcher.Symbol, totalVolume, avgPrice);
+                }
+                else
+                {
+                    _logger.LogInformation("No matches found for symbol {Symbol} despite having both buy and sell orders", matcher.Symbol);
                 }
 
                 // Update job with results
-                job.CompletedAt = endTime;
+                job.CompletedAt = DateTime.UtcNow;
                 job.Status = "COMPLETED";
                 job.OrdersProcessed = buyOrders.Count + sellOrders.Count;
                 job.TradesGenerated = matchResults.Count;
-                job.ProcessingTimeMs = (long)(endTime - startTime).TotalMilliseconds;
+                job.ProcessingTimeMs = (long)(job.CompletedAt - processingStartTime).Value.TotalMilliseconds;
                 job.TotalVolume = matchResults.Sum(t => t.Quantity * t.Price);
 
                 // Update the job in the database
                 await _jobRepository.UpdateJobAsync(job, cancellationToken);
+                _logger.LogInformation("Completed matching job {JobId} for symbol {Symbol} in {ProcessingTimeMs}ms - Generated {TradeCount} trades",
+                    job.Id, matcher.Symbol, job.ProcessingTimeMs, job.TradesGenerated);
 
                 // Update matcher statistics
                 matcher.LastMatchTime = DateTime.UtcNow;
@@ -204,7 +251,7 @@ namespace MatchMakingService.Services
 
                 await _jobRepository.UpdateJobAsync(job, cancellationToken);
 
-                _logger.LogError(ex, "Error during order matching for symbol {Symbol}", matcher.Symbol);
+                _logger.LogError(ex, "Error during order matching for symbol {Symbol} - Job {JobId}", matcher.Symbol, job.Id);
                 throw;
             }
             finally
@@ -221,7 +268,10 @@ namespace MatchMakingService.Services
                         _logger.LogInformation("Unlocking {OrderCount} orders after matching for symbol {Symbol}",
                             allOrders.Count, matcher.Symbol);
 
+                        var unlockStartTime = DateTime.UtcNow;
                         await _orderRepository.UnlockOrdersAsync(allOrders, cancellationToken);
+                        var unlockTimeMs = (long)(DateTime.UtcNow - unlockStartTime).TotalMilliseconds;
+                        _logger.LogDebug("Orders unlocked in {UnlockTimeMs}ms", unlockTimeMs);
                     }
                     catch (Exception unlockEx)
                     {

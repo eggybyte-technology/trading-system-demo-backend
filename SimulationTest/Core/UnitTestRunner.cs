@@ -62,6 +62,19 @@ namespace SimulationTest.Core
     }
 
     /// <summary>
+    /// Test run results data structure
+    /// </summary>
+    public class TestRunResults
+    {
+        public int Total { get; set; }
+        public int Passed { get; set; }
+        public int Failed { get; set; }
+        public int Skipped { get; set; }
+        public TimeSpan Elapsed { get; set; }
+        public List<TimeSpan> TestLatencies { get; set; } = new List<TimeSpan>();
+    }
+
+    /// <summary>
     /// Manages the execution of unit tests
     /// </summary>
     public class UnitTestRunner
@@ -73,6 +86,8 @@ namespace SimulationTest.Core
         private readonly string _coverageOutputPath;
         private readonly int _testTimeout;
         private readonly int _retryCount;
+        private readonly string _timestamp;
+        private readonly string _testFolderPath;
         private TestProgressTracker _progressTracker;
 
         /// <summary>
@@ -84,10 +99,15 @@ namespace SimulationTest.Core
             Console.WriteLine("Initializing UnitTestRunner...");
             _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
 
-            // Set up log file
-            string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-            Directory.CreateDirectory("logs");
-            _logFile = Path.Combine("logs", $"unittest_log_{timestamp}.txt");
+            // Create timestamp for consistent naming across all files
+            _timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+
+            // Create a dedicated folder for this test run
+            _testFolderPath = Path.Combine("logs", $"unit_test_{_timestamp}");
+            Directory.CreateDirectory(_testFolderPath);
+
+            // Set up log file within the test folder
+            _logFile = Path.Combine(_testFolderPath, "unittest_log.txt");
             Console.WriteLine($"Log file created at: {_logFile}");
 
             // Initialize the log file
@@ -162,8 +182,8 @@ namespace SimulationTest.Core
         /// <summary>
         /// Runs all unit tests in the assembly
         /// </summary>
-        /// <returns>Exit code (0 for success, non-zero for failure)</returns>
-        public async Task<int> RunTestsAsync()
+        /// <returns>Test run results with statistics</returns>
+        public async Task<TestRunResults> RunTestsAsync()
         {
             var stopwatch = new Stopwatch();
             stopwatch.Start();
@@ -179,6 +199,12 @@ namespace SimulationTest.Core
 
             AnsiConsole.MarkupLine("[green]Running unit tests for Trading System API...[/]");
             Console.WriteLine("Starting test discovery and execution...");
+
+            // Initialize test counts
+            int totalTests = 0;
+            int passedTests = 0;
+            int failedTests = 0;
+            int skippedTests = 0;
 
             try
             {
@@ -225,7 +251,14 @@ namespace SimulationTest.Core
                     AnsiConsole.MarkupLine("[yellow]Warning: No test classes found in the assembly.[/]");
                     using var logWriter = new StreamWriter(_logFile, true);
                     logWriter.WriteLine("Warning: No test classes found in the assembly.");
-                    return 0;
+                    return new TestRunResults
+                    {
+                        Total = totalTests,
+                        Passed = passedTests,
+                        Failed = failedTests,
+                        Skipped = skippedTests,
+                        Elapsed = stopwatch.Elapsed
+                    };
                 }
 
                 AnsiConsole.MarkupLine($"[blue]Found {testClasses.Count} test classes.[/]");
@@ -245,15 +278,8 @@ namespace SimulationTest.Core
                 }
 
                 // Set up the progress tracker with the total number of tests
-                int totalTests = allTestMethods.Count;
+                totalTests = allTestMethods.Count;
                 _progressTracker = new TestProgressTracker(totalTests);
-
-                int passedTests = 0;
-                int failedTests = 0;
-                int skippedTests = 0;
-
-                // Start tracking progress
-                _progressTracker.StartTracking();
 
                 // Sort test methods based on dependencies
                 var orderedTests = OrderTestsByDependencies(allTestMethods);
@@ -498,15 +524,41 @@ namespace SimulationTest.Core
                 {
                     AnsiConsole.MarkupLine($"[red]Failed test count: {failedTests}[/]");
                     AnsiConsole.MarkupLine($"[yellow]See log file for details: {_logFile}[/]");
-                    return 1;
+
+                    // Clean up coverage files
+                    CleanupCoverageFiles();
+
+                    return new TestRunResults
+                    {
+                        Total = totalTests,
+                        Passed = passedTests,
+                        Failed = failedTests,
+                        Skipped = skippedTests,
+                        Elapsed = elapsed,
+                        TestLatencies = _progressTracker.GetLatencies().ToList()
+                    };
                 }
 
                 AnsiConsole.MarkupLine("[green]All tests passed.[/]");
                 AnsiConsole.WriteLine();
-                return 0;
+
+                // Clean up coverage files
+                CleanupCoverageFiles();
+
+                return new TestRunResults
+                {
+                    Total = totalTests,
+                    Passed = passedTests,
+                    Failed = failedTests,
+                    Skipped = skippedTests,
+                    Elapsed = elapsed,
+                    TestLatencies = _progressTracker.GetLatencies().ToList()
+                };
             }
             catch (Exception ex)
             {
+                stopwatch.Stop();
+
                 AnsiConsole.MarkupLine($"[red]Error running tests: {ex.Message}[/]");
                 Console.WriteLine($"Error running tests: {ex.Message}");
                 Console.WriteLine(ex.StackTrace);
@@ -515,75 +567,214 @@ namespace SimulationTest.Core
                 logWriter.WriteLine("UNHANDLED EXCEPTION");
                 logWriter.WriteLine($"Error: {ex.Message}");
                 logWriter.WriteLine(ex.StackTrace);
-                return 1;
+
+                // Still try to clean up coverage files
+                try
+                {
+                    CleanupCoverageFiles();
+                }
+                catch { }
+
+                return new TestRunResults
+                {
+                    Total = totalTests,
+                    Passed = passedTests,
+                    Failed = failedTests,
+                    Skipped = skippedTests,
+                    Elapsed = stopwatch.Elapsed
+                };
             }
         }
 
         /// <summary>
-        /// Orders test methods based on dependencies
+        /// Orders tests by their dependencies, ensuring that dependent tests are run after their dependencies
         /// </summary>
-        /// <param name="testMethods">List of test methods</param>
-        /// <returns>Ordered list of test methods</returns>
         private List<(Type ClassType, MethodInfo Method, ApiTestAttribute Attribute)> OrderTestsByDependencies(
             List<(Type ClassType, MethodInfo Method, ApiTestAttribute Attribute)> testMethods)
         {
-            var result = new List<(Type ClassType, MethodInfo Method, ApiTestAttribute Attribute)>();
-            var processed = new HashSet<string>();
-
-            // First add methods without dependencies
-            foreach (var test in testMethods.Where(t => t.Attribute.Dependencies.Length == 0))
+            // Create a map of method names to test methods for easy lookup
+            var testMethodMap = new Dictionary<string, (Type ClassType, MethodInfo Method, ApiTestAttribute Attribute)>();
+            foreach (var testMethod in testMethods)
             {
-                result.Add(test);
-                processed.Add($"{test.ClassType.FullName}.{test.Method.Name}");
+                string fullyQualifiedName = $"{testMethod.ClassType.FullName}.{testMethod.Method.Name}";
+                testMethodMap[fullyQualifiedName] = testMethod;
+
+                // Also add without namespace to support simpler dependency reference
+                testMethodMap[$"{testMethod.ClassType.Name}.{testMethod.Method.Name}"] = testMethod;
             }
 
-            // Then add methods with dependencies in order
-            while (result.Count < testMethods.Count)
+            // Log all available tests
+            Console.WriteLine("Available tests for dependency resolution:");
+            foreach (var key in testMethodMap.Keys)
             {
-                bool addedAny = false;
+                Console.WriteLine($"  - {key}");
+            }
 
-                foreach (var test in testMethods)
+            // Build a dependency graph
+            var dependencyGraph = new Dictionary<string, List<string>>();
+            foreach (var testMethod in testMethods)
+            {
+                string fullyQualifiedName = $"{testMethod.ClassType.FullName}.{testMethod.Method.Name}";
+
+                if (testMethod.Attribute.Dependencies != null && testMethod.Attribute.Dependencies.Length > 0)
                 {
-                    string testName = $"{test.ClassType.FullName}.{test.Method.Name}";
+                    dependencyGraph[fullyQualifiedName] = new List<string>(testMethod.Attribute.Dependencies);
 
-                    if (processed.Contains(testName))
-                        continue;
-
-                    bool allDependenciesSatisfied = true;
-                    foreach (var dependency in test.Attribute.Dependencies)
+                    // Log dependencies
+                    Console.WriteLine($"Test {fullyQualifiedName} depends on:");
+                    foreach (var dep in testMethod.Attribute.Dependencies)
                     {
-                        if (!processed.Contains(dependency))
+                        Console.WriteLine($"  - {dep}");
+
+                        // Check if the dependency exists
+                        if (!testMethodMap.ContainsKey(dep))
                         {
-                            allDependenciesSatisfied = false;
-                            break;
+                            Console.WriteLine($"WARNING: Dependency {dep} not found in available tests!");
+
+                            // Try with namespace
+                            string[] parts = dep.Split('.');
+                            if (parts.Length >= 2)
+                            {
+                                string className = parts[parts.Length - 2];
+                                string methodName = parts[parts.Length - 1];
+
+                                var matchingTests = testMethods
+                                    .Where(t => t.ClassType.Name == className && t.Method.Name == methodName)
+                                    .ToList();
+
+                                if (matchingTests.Any())
+                                {
+                                    Console.WriteLine($"  Found matching test without full namespace: {matchingTests.First().ClassType.FullName}.{matchingTests.First().Method.Name}");
+                                }
+                            }
                         }
                     }
-
-                    if (allDependenciesSatisfied)
-                    {
-                        result.Add(test);
-                        processed.Add(testName);
-                        addedAny = true;
-                    }
                 }
-
-                if (!addedAny)
+                else
                 {
-                    // If we couldn't add any tests this round, there might be a dependency cycle
-                    // Add the remaining tests in any order
-                    foreach (var test in testMethods)
+                    dependencyGraph[fullyQualifiedName] = new List<string>();
+                }
+            }
+
+            // Perform topological sort to get the ordered tests
+            var visited = new HashSet<string>();
+            var orderedTests = new List<(Type ClassType, MethodInfo Method, ApiTestAttribute Attribute)>();
+
+            foreach (var testMethod in testMethods)
+            {
+                string fullyQualifiedName = $"{testMethod.ClassType.FullName}.{testMethod.Method.Name}";
+
+                if (!visited.Contains(fullyQualifiedName))
+                {
+                    VisitNode(fullyQualifiedName, dependencyGraph, visited, orderedTests, testMethodMap, new HashSet<string>());
+                }
+            }
+
+            // Log the ordered tests
+            Console.WriteLine("Ordered tests:");
+            for (int i = 0; i < orderedTests.Count; i++)
+            {
+                var testMethod = orderedTests[i];
+                Console.WriteLine($"  {i + 1}. {testMethod.ClassType.FullName}.{testMethod.Method.Name}");
+            }
+
+            return orderedTests;
+        }
+
+        /// <summary>
+        /// Visits a node in the dependency graph and adds it to the ordered list after its dependencies
+        /// </summary>
+        private void VisitNode(
+            string node,
+            Dictionary<string, List<string>> dependencyGraph,
+            HashSet<string> visited,
+            List<(Type ClassType, MethodInfo Method, ApiTestAttribute Attribute)> orderedTests,
+            Dictionary<string, (Type ClassType, MethodInfo Method, ApiTestAttribute Attribute)> testMethodMap,
+            HashSet<string> currentPath)
+        {
+            if (currentPath.Contains(node))
+            {
+                // We have a circular dependency
+                Console.WriteLine($"WARNING: Circular dependency detected involving {node}");
+                return;
+            }
+
+            if (visited.Contains(node))
+            {
+                // Already processed
+                return;
+            }
+
+            currentPath.Add(node);
+
+            if (dependencyGraph.ContainsKey(node))
+            {
+                foreach (var dependency in dependencyGraph[node])
+                {
+                    if (testMethodMap.ContainsKey(dependency))
                     {
-                        string testName = $"{test.ClassType.FullName}.{test.Method.Name}";
-                        if (!processed.Contains(testName))
+                        VisitNode(dependency, dependencyGraph, visited, orderedTests, testMethodMap, currentPath);
+                    }
+                    else
+                    {
+                        // Missing dependency - see if we can resolve it by class name
+                        string[] parts = dependency.Split('.');
+                        if (parts.Length >= 2)
                         {
-                            result.Add(test);
-                            processed.Add(testName);
+                            string className = parts[parts.Length - 2];
+                            string methodName = parts[parts.Length - 1];
+
+                            var match = testMethodMap.FirstOrDefault(x =>
+                                x.Key.EndsWith($"{className}.{methodName}"));
+
+                            if (!string.IsNullOrEmpty(match.Key))
+                            {
+                                Console.WriteLine($"Resolved dependency {dependency} to {match.Key}");
+                                VisitNode(match.Key, dependencyGraph, visited, orderedTests, testMethodMap, currentPath);
+                            }
+                            else
+                            {
+                                Console.WriteLine($"ERROR: Required dependency {dependency} not found!");
+                            }
                         }
                     }
                 }
             }
 
-            return result;
+            visited.Add(node);
+            currentPath.Remove(node);
+
+            if (testMethodMap.ContainsKey(node))
+            {
+                orderedTests.Add(testMethodMap[node]);
+            }
+        }
+
+        /// <summary>
+        /// Cleans up coverage files after test run
+        /// </summary>
+        private void CleanupCoverageFiles()
+        {
+            if (_generateCoverage)
+            {
+                try
+                {
+                    // Only delete the contents, keep the directory structure
+                    foreach (var file in Directory.GetFiles(_coverageOutputPath))
+                    {
+                        File.Delete(file);
+                    }
+                    foreach (var dir in Directory.GetDirectories(_coverageOutputPath))
+                    {
+                        Directory.Delete(dir, true);
+                    }
+                    Console.WriteLine("Coverage files cleaned up.");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Warning: Could not clean up coverage files: {ex.Message}");
+                }
+            }
         }
     }
 }

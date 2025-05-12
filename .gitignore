@@ -4,3 +4,4 @@ release/
 .cursor/
 .cursorignore
 build/
+logs/

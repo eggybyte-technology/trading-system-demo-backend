@@ -60,14 +60,13 @@ namespace AccountService.Controllers
                 var account = await _accountService.GetAccountBalanceAsync(userId);
 
                 // Map to API response model
-                var response = new
+                var response = new BalanceResponse
                 {
-                    Balances = account.Balances.Select(b => new
+                    Balances = account.Balances.Select(b => new BalanceInfo
                     {
                         Asset = b.Asset,
                         Free = b.Free,
                         Locked = b.Locked,
-                        Total = b.Free + b.Locked,
                         UpdatedAt = new DateTimeOffset(b.UpdatedAt).ToUnixTimeMilliseconds()
                     }).ToList()
                 };
@@ -112,12 +111,12 @@ namespace AccountService.Controllers
                     userId, page, pageSize, startTime, endTime, type);
 
                 // Map to API response model
-                var response = new
+                var response = new TransactionListResponse
                 {
                     Total = total,
                     Page = page,
                     PageSize = pageSize,
-                    Items = transactions.Select(t => new
+                    Items = transactions.Select(t => new TransactionItem
                     {
                         Id = t.Id.ToString(),
                         UserId = t.UserId.ToString(),
@@ -166,7 +165,7 @@ namespace AccountService.Controllers
                     userId, request.Asset, request.Amount, request.Reference);
 
                 // Map to API response model
-                var response = new
+                var response = new DepositResponse
                 {
                     Id = transaction.Id.ToString(),
                     UserId = transaction.UserId.ToString(),
@@ -218,8 +217,8 @@ namespace AccountService.Controllers
                 var withdrawal = await _accountService.CreateWithdrawalAsync(
                     userId, request.Asset, request.Amount, request.Address, request.Memo);
 
-                // Map to API response model
-                var response = new
+                // Create a WithdrawalResponse model   
+                var response = new WithdrawalResponse
                 {
                     WithdrawalId = withdrawal.Id.ToString(),
                     Status = withdrawal.Status,
@@ -273,7 +272,7 @@ namespace AccountService.Controllers
                     : new DateTimeOffset(withdrawal.CreatedAt.AddHours(1)).ToUnixTimeMilliseconds();
 
                 // Map to API response model
-                var response = new
+                var response = new WithdrawalResponse
                 {
                     WithdrawalId = withdrawal.Id.ToString(),
                     Status = withdrawal.Status,
@@ -379,52 +378,5 @@ namespace AccountService.Controllers
                 return StatusCode(500, new { message = "An error occurred while creating the account" });
             }
         }
-    }
-
-    /// <summary>
-    /// Deposit request
-    /// </summary>
-    public class DepositRequest
-    {
-        /// <summary>
-        /// Asset type (e.g., BTC, ETH)
-        /// </summary>
-        public string Asset { get; set; } = string.Empty;
-
-        /// <summary>
-        /// Deposit amount
-        /// </summary>
-        public decimal Amount { get; set; }
-
-        /// <summary>
-        /// Optional reference identifier
-        /// </summary>
-        public string? Reference { get; set; }
-    }
-
-    /// <summary>
-    /// Withdrawal request
-    /// </summary>
-    public class WithdrawalRequest
-    {
-        /// <summary>
-        /// Asset type (e.g., BTC, ETH)
-        /// </summary>
-        public string Asset { get; set; } = string.Empty;
-
-        /// <summary>
-        /// Withdrawal amount
-        /// </summary>
-        public decimal Amount { get; set; }
-
-        /// <summary>
-        /// Destination address
-        /// </summary>
-        public string Address { get; set; } = string.Empty;
-
-        /// <summary>
-        /// Optional memo/tag for certain assets
-        /// </summary>
-        public string? Memo { get; set; }
     }
 }

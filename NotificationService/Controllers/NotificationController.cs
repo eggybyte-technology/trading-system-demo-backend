@@ -23,7 +23,7 @@ namespace NotificationService.Controllers
         private readonly ILoggerService _logger;
 
         /// <summary>
-        /// Initializes a new instance of the notification controller
+        /// Initializes a new instance of the NotificationController
         /// </summary>
         /// <param name="dbFactory">MongoDB connection factory</param>
         /// <param name="logger">Logger service</param>
@@ -31,8 +31,8 @@ namespace NotificationService.Controllers
             MongoDbConnectionFactory dbFactory,
             ILoggerService logger)
         {
-            _dbFactory = dbFactory ?? throw new ArgumentNullException(nameof(dbFactory));
-            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _dbFactory = dbFactory;
+            _logger = logger;
         }
 
         /// <summary>
@@ -255,26 +255,5 @@ namespace NotificationService.Controllers
                 return StatusCode(500, "An error occurred while updating notification settings");
             }
         }
-    }
-
-    /// <summary>
-    /// Request model for updating notification settings
-    /// </summary>
-    public class NotificationSettingsUpdateRequest
-    {
-        /// <summary>
-        /// Whether email notifications are enabled
-        /// </summary>
-        public bool EmailEnabled { get; set; }
-
-        /// <summary>
-        /// Whether push notifications are enabled
-        /// </summary>
-        public bool PushEnabled { get; set; }
-
-        /// <summary>
-        /// Type-specific notification settings
-        /// </summary>
-        public Dictionary<string, bool> TypeSettings { get; set; } = new Dictionary<string, bool>();
     }
 }

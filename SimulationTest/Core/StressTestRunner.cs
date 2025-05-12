@@ -8,77 +8,132 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using SimulationTest.Helpers;
 using Spectre.Console;
+using CommonLib.Models.Identity;
+using System.IO;
 
 namespace SimulationTest.Core
 {
     /// <summary>
-    /// Runs stress tests against a specific service with real-time progress tracking
+    /// Runs stress tests with a simplified workflow: registering users and submitting orders
     /// </summary>
     public class StressTestRunner
     {
         private readonly IConfiguration _configuration;
-        private readonly string _targetService;
-        private readonly int _concurrency;
-        private readonly int _durationSeconds;
         private readonly HttpClientFactory _httpClientFactory;
         private readonly ConcurrentBag<RequestResult> _results = new ConcurrentBag<RequestResult>();
-        private CancellationTokenSource _cts;
-        private TestProgressTracker _progressTracker;
+        private readonly object _updateLock = new object();
+        private readonly string _simulationMode;
+        private readonly List<string> _symbolList = new List<string> { "BTC-USDT", "ETH-USDT", "BNB-USDT" };
+        private readonly Dictionary<string, (decimal Min, decimal Max)> _priceRanges = new() {
+            { "BTC-USDT", (1000m, 100000m) },
+            { "ETH-USDT", (100m, 10000m) },
+            { "BNB-USDT", (10m, 1000m) }
+        };
+
+        // Test configuration
+        private readonly int _userCount;
+        private readonly int _ordersPerUser;
+        private readonly int _concurrency;
+        private readonly int _timeoutSeconds;
+
+        // Test results
         private int _totalRequests;
         private int _successfulRequests;
         private int _failedRequests;
-        private readonly object _updateLock = new object();
+        private DateTime _startTime;
+        private DateTime _endTime;
+
+        // Progress tracking
+        private readonly IProgress<TestProgress> _progress;
+        private readonly string _testFolderPath;
 
         /// <summary>
         /// Initializes a new instance of the StressTestRunner class
         /// </summary>
-        /// <param name="configuration">The application configuration</param>
-        /// <param name="targetService">The service to target</param>
-        /// <param name="concurrency">Number of concurrent requests</param>
-        /// <param name="durationSeconds">Duration of the test in seconds</param>
-        public StressTestRunner(IConfiguration configuration, string targetService, int concurrency, int durationSeconds)
+        /// <param name="configuration">Application configuration</param>
+        /// <param name="userCount">Number of users to register</param>
+        /// <param name="ordersPerUser">Number of orders per user</param>
+        /// <param name="concurrency">Number of concurrent operations</param>
+        /// <param name="timeoutSeconds">Timeout in seconds for HTTP requests</param>
+        /// <param name="progress">Progress reporter</param>
+        public StressTestRunner(
+            IConfiguration configuration,
+            int userCount,
+            int ordersPerUser,
+            int concurrency,
+            int timeoutSeconds,
+            IProgress<TestProgress> progress = null)
         {
             _configuration = configuration;
-            _targetService = targetService;
+            _userCount = userCount;
+            _ordersPerUser = ordersPerUser;
             _concurrency = concurrency;
-            _durationSeconds = durationSeconds;
+            _timeoutSeconds = timeoutSeconds;
+            _progress = progress;
+            _simulationMode = configuration["StressTestSettings:SimulationMode"] ?? "random";
+            _testFolderPath = configuration["StressTestSettings:TestFolderPath"];
 
             // Initialize HTTP client factory
             _httpClientFactory = new HttpClientFactory();
-            _httpClientFactory.Configure(
-                int.Parse(_configuration["TestSettings:TestTimeout"] ?? "30"));
+            _httpClientFactory.Configure(_timeoutSeconds);
 
             // Configure service URLs
             _httpClientFactory.ConfigureServiceUrls(new Dictionary<string, string>
             {
-                { "identity", _configuration["SimulationSettings:IdentityHost"] ?? "http://identity.trading-system.local" },
-                { "trading", _configuration["SimulationSettings:TradingHost"] ?? "http://trading.trading-system.local" },
-                { "market-data", _configuration["SimulationSettings:MarketDataHost"] ?? "http://market-data.trading-system.local" },
-                { "account", _configuration["SimulationSettings:AccountHost"] ?? "http://account.trading-system.local" },
-                { "risk", _configuration["SimulationSettings:RiskHost"] ?? "http://risk.trading-system.local" },
-                { "notification", _configuration["SimulationSettings:NotificationHost"] ?? "http://notification.trading-system.local" },
-                { "match-making", _configuration["SimulationSettings:MatchMakingHost"] ?? "http://match-making.trading-system.local" }
+                { "identity", _configuration["Services:IdentityHost"] ?? "http://identity.trading-system.local" },
+                { "trading", _configuration["Services:TradingHost"] ?? "http://trading.trading-system.local" },
+                { "market-data", _configuration["Services:MarketDataHost"] ?? "http://market-data.trading-system.local" },
+                { "account", _configuration["Services:AccountHost"] ?? "http://account.trading-system.local" },
+                { "risk", _configuration["Services:RiskHost"] ?? "http://risk.trading-system.local" },
+                { "notification", _configuration["Services:NotificationHost"] ?? "http://notification.trading-system.local" },
+                { "match-making", _configuration["Services:MatchMakingHost"] ?? "http://match-making.trading-system.local" }
             });
-
-            // Initialize progress tracker (est. 10 requests per second per thread)
-            int estimatedTotalRequests = _concurrency * _durationSeconds * 10;
-            _progressTracker = new TestProgressTracker(estimatedTotalRequests);
         }
 
         /// <summary>
-        /// Runs the stress test
+        /// Runs the stress test with the configured parameters
         /// </summary>
-        public async Task RunAsync()
+        /// <returns>A TestResult object containing test statistics</returns>
+        public async Task<TestResult> RunAsync()
         {
-            // Verify connectivity to the target service
-            var connectivityChecker = new ServiceConnectivityChecker(_httpClientFactory,
-                new Dictionary<string, string> { { _targetService, _httpClientFactory.GetServiceUrl(_targetService) } });
+            _startTime = DateTime.Now;
 
-            bool isServiceAvailable = await connectivityChecker.CheckServiceConnectivityAsync(_targetService);
-            if (!isServiceAvailable)
+            // Verify connectivity to required services
+            var servicesToCheck = new Dictionary<string, string>
             {
-                AnsiConsole.MarkupLine($"[red]Error: {_targetService} service is not available[/]");
-                return;
+                { "trading", _httpClientFactory.GetServiceUrl("trading") },
+                { "identity", _httpClientFactory.GetServiceUrl("identity") }
+            };
+
+            // Log test start
+            UpdateProgress("Starting connectivity check", 0);
+            Console.WriteLine($"Starting stress test at {_startTime:yyyy-MM-dd HH:mm:ss}");
+            Console.WriteLine($"Configuration: {_userCount} users, {_ordersPerUser} orders per user, {_concurrency} concurrent operations");
+
+            var connectivityChecker = new ServiceConnectivityChecker(_httpClientFactory, servicesToCheck);
+            var serviceStatusMap = await connectivityChecker.CheckAllServicesAsync();
+            bool areServicesAvailable = serviceStatusMap.Values.All(status => status);
+
+            if (!areServicesAvailable)
+            {
+                // Display which services are not available
+                foreach (var service in serviceStatusMap.Where(s => !s.Value))
+                {
+                    Console.WriteLine($"Error: Service '{service.Key}' is not available");
+                }
+                Console.WriteLine("Cannot run trading simulation when required services are not available");
+
+                return new TestResult
+                {
+                    Success = false,
+                    ErrorMessage = "One or more required services are not available",
+                    TotalRequests = 0,
+                    SuccessfulRequests = 0,
+                    FailedRequests = 0,
+                    StartTime = _startTime,
+                    EndTime = DateTime.Now,
+                    ElapsedTime = DateTime.Now - _startTime
+                };
             }
 
             // Reset counters
@@ -87,268 +142,279 @@ namespace SimulationTest.Core
             _failedRequests = 0;
             _results.Clear();
 
-            // Start progress tracking
-            _progressTracker.StartTracking();
-
-            // Create cancellation token source
-            _cts = new CancellationTokenSource(TimeSpan.FromSeconds(_durationSeconds));
-
             try
             {
-                AnsiConsole.MarkupLine($"[blue]Starting stress test against {_targetService} service with {_concurrency} concurrent users for {_durationSeconds} seconds[/]");
+                _startTime = DateTime.Now;
+                var stopwatch = Stopwatch.StartNew();
 
-                // Create and start worker tasks
-                var tasks = new List<Task>();
-                for (int i = 0; i < _concurrency; i++)
+                // Create a timestamp-based folder for this test run
+                string testFolderPath = _testFolderPath;
+                if (string.IsNullOrEmpty(testFolderPath))
                 {
-                    int workerIndex = i;
-                    tasks.Add(Task.Run(() => RunWorkerAsync(workerIndex, _cts.Token)));
+                    string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                    testFolderPath = Path.Combine("logs", $"stress_test_{timestamp}");
+                    Directory.CreateDirectory(testFolderPath);
                 }
 
-                // Wait for all tasks to complete or for the time to expire
-                await Task.WhenAll(tasks);
+                // Initialize services (10% of progress)
+                UpdateProgress("Initializing test services...", 0);
 
-                // Summarize results
-                _progressTracker.StopTracking();
-                await SummarizeResultsAsync();
-            }
-            finally
-            {
-                _cts.Dispose();
-            }
-        }
+                // Create user service and market data service with the test folder path
+                var userService = new UserService(
+                    _httpClientFactory.GetClient("identity"),
+                    _httpClientFactory,
+                    new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase },
+                    testFolderPath);
 
-        /// <summary>
-        /// Runs a worker task that sends requests to the target service
-        /// </summary>
-        /// <param name="workerIndex">The worker index</param>
-        /// <param name="cancellationToken">Cancellation token</param>
-        private async Task RunWorkerAsync(int workerIndex, CancellationToken cancellationToken)
-        {
-            // Get client for the target service
-            var client = _httpClientFactory.GetClient(_targetService);
+                UpdateProgress("Services initialized", 10);
 
-            // Select endpoint based on target service
-            string endpoint = GetRandomEndpoint(_targetService);
+                // Register users (20% of progress)
+                UpdateProgress("Registering test users...", 10, 0, _userCount);
 
-            try
-            {
-                while (!cancellationToken.IsCancellationRequested)
+                var users = await userService.CreateTestUsersAsync(_userCount, verbose: false);
+
+                if (users.Count == 0)
                 {
-                    var stopwatch = new Stopwatch();
-                    stopwatch.Start();
-
-                    try
+                    Console.WriteLine("Failed to create test users. Aborting simulation.");
+                    return new TestResult
                     {
-                        // Send request
-                        var response = await client.GetAsync(endpoint, cancellationToken);
-
-                        stopwatch.Stop();
-
-                        // Record result
-                        var result = new RequestResult
-                        {
-                            Success = response.IsSuccessStatusCode,
-                            Duration = stopwatch.Elapsed,
-                            StatusCode = (int)response.StatusCode
-                        };
-
-                        _results.Add(result);
-
-                        lock (_updateLock)
-                        {
-                            _totalRequests++;
-                            if (result.Success)
-                            {
-                                _successfulRequests++;
-                            }
-                            else
-                            {
-                                _failedRequests++;
-                            }
-                        }
-
-                        // Update progress tracker
-                        _progressTracker.UpdateTestResult(new ApiTestResult
-                        {
-                            Success = result.Success,
-                            Duration = result.Duration,
-                            Message = result.Success ? "Request succeeded" : $"Request failed with status code {result.StatusCode}"
-                        });
-
-                        // Add a small delay between requests (1-50ms)
-                        await Task.Delay(new Random().Next(1, 50), cancellationToken);
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        // Test duration expired
-                        break;
-                    }
-                    catch (Exception ex)
-                    {
-                        stopwatch.Stop();
-
-                        // Record failed result
-                        var result = new RequestResult
-                        {
-                            Success = false,
-                            Duration = stopwatch.Elapsed,
-                            StatusCode = 0,
-                            Exception = ex
-                        };
-
-                        _results.Add(result);
-
-                        lock (_updateLock)
-                        {
-                            _totalRequests++;
-                            _failedRequests++;
-                        }
-
-                        // Update progress tracker
-                        _progressTracker.UpdateTestResult(new ApiTestResult
-                        {
-                            Success = false,
-                            Duration = result.Duration,
-                            Message = $"Request failed: {ex.Message}",
-                            Exception = ex
-                        });
-
-                        // Add a delay between failed requests (100-200ms)
-                        await Task.Delay(new Random().Next(100, 200), cancellationToken);
-                    }
+                        Success = false,
+                        ErrorMessage = "Failed to create test users",
+                        TotalRequests = 0,
+                        SuccessfulRequests = 0,
+                        FailedRequests = 0,
+                        StartTime = _startTime,
+                        EndTime = DateTime.Now,
+                        ElapsedTime = DateTime.Now - _startTime
+                    };
                 }
+
+                UpdateProgress("All users registered", 30, users.Count, _userCount);
+
+                // Submit orders (60% of progress)
+                // Create order service with all required parameters
+                var orderService = new OrderService(
+                    _httpClientFactory,
+                    users.Count,
+                    _ordersPerUser,
+                    _symbolList,
+                    _priceRanges,
+                    0, // No base delay
+                    (0, 50) // Request delay range
+                );
+
+                UpdateProgress("Submitting orders...", 30, 0, users.Count * _ordersPerUser);
+
+                // Calculate total operations
+                int totalOperations = users.Count * _ordersPerUser;
+                int completedOperations = 0;
+
+                // Process users in batches to control concurrency
+                var batchSize = Math.Min(_concurrency, users.Count);
+
+                // Process all users with controlled concurrency
+                for (int i = 0; i < users.Count; i += batchSize)
+                {
+                    var currentBatch = users.Skip(i).Take(batchSize).ToList();
+                    var tasks = new List<Task>();
+
+                    foreach (var user in currentBatch)
+                    {
+                        tasks.Add(Task.Run(async () =>
+                        {
+                            try
+                            {
+                                // Choose simulation mode
+                                if (_simulationMode.Equals("market", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    await orderService.SubmitMarketOrdersAsync(user, _ordersPerUser, null, false, false);
+                                }
+                                else // Default to random mode
+                                {
+                                    await orderService.SubmitRandomOrdersAsync(user, _ordersPerUser, null, false, false);
+                                }
+
+                                // Update progress
+                                Interlocked.Add(ref completedOperations, _ordersPerUser);
+                                var progressPercent = 30 + (int)((float)completedOperations / totalOperations * 60);
+                                UpdateProgress($"Processed {completedOperations} of {totalOperations} orders", progressPercent, completedOperations, totalOperations);
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine($"Error processing orders for user {user.Email}: {ex.Message}");
+                            }
+                        }));
+                    }
+
+                    // Wait for current batch to complete
+                    await Task.WhenAll(tasks);
+                }
+
+                stopwatch.Stop();
+
+                // Get results from order service
+                _totalRequests = orderService.TotalOperations;
+                _successfulRequests = orderService.SuccessCount;
+                _failedRequests = orderService.FailureCount;
+
+                // Get latencies
+                foreach (var latency in orderService.Latencies)
+                {
+                    _results.Add(new RequestResult
+                    {
+                        Success = true,
+                        Duration = TimeSpan.FromMilliseconds(latency),
+                        StatusCode = 200
+                    });
+                }
+
+                _endTime = DateTime.Now;
+                var elapsedTime = _endTime - _startTime;
+
+                UpdateProgress("Test completed", 100);
+                Console.WriteLine($"Test completed in {elapsedTime.TotalSeconds:F2} seconds");
+                Console.WriteLine($"Total requests: {_totalRequests}, Successful: {_successfulRequests}, Failed: {_failedRequests}");
+
+                // Calculate statistics
+                TimeSpan averageLatency = TimeSpan.Zero;
+                TimeSpan minLatency = TimeSpan.MaxValue;
+                TimeSpan maxLatency = TimeSpan.Zero;
+
+                List<TimeSpan> latencies = _results.Select(r => r.Duration).ToList();
+
+                if (latencies.Count > 0)
+                {
+                    averageLatency = TimeSpan.FromTicks((long)latencies.Average(l => l.Ticks));
+                    minLatency = TimeSpan.FromTicks(latencies.Min(l => l.Ticks));
+                    maxLatency = TimeSpan.FromTicks(latencies.Max(l => l.Ticks));
+                }
+
+                // Calculate percentiles
+                List<double> percentiles = CalculatePercentiles(latencies);
+
+                return new TestResult
+                {
+                    Success = true,
+                    TotalRequests = _totalRequests,
+                    SuccessfulRequests = _successfulRequests,
+                    FailedRequests = _failedRequests,
+                    AverageLatency = averageLatency,
+                    MinLatency = minLatency,
+                    MaxLatency = maxLatency,
+                    Percentiles = percentiles,
+                    StartTime = _startTime,
+                    EndTime = _endTime,
+                    ElapsedTime = elapsedTime,
+                    OrdersPerSecond = _totalRequests / elapsedTime.TotalSeconds,
+                    TestFolderPath = testFolderPath
+                };
             }
-            catch (OperationCanceledException)
+            catch (Exception ex)
             {
-                // Test duration expired
+                _endTime = DateTime.Now;
+                Console.WriteLine($"Error running stress test: {ex.Message}");
+
+                // Make sure we have a test folder path even in case of error
+                string testFolderPath = _testFolderPath;
+                if (string.IsNullOrEmpty(testFolderPath))
+                {
+                    string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                    testFolderPath = Path.Combine("logs", $"stress_test_error_{timestamp}");
+                    try { Directory.CreateDirectory(testFolderPath); } catch { }
+                }
+
+                return new TestResult
+                {
+                    Success = false,
+                    ErrorMessage = ex.Message,
+                    TotalRequests = _totalRequests,
+                    SuccessfulRequests = _successfulRequests,
+                    FailedRequests = _failedRequests,
+                    StartTime = _startTime,
+                    EndTime = _endTime,
+                    ElapsedTime = _endTime - _startTime,
+                    TestFolderPath = testFolderPath
+                };
             }
         }
 
         /// <summary>
-        /// Gets a random endpoint for the target service
+        /// Calculates percentiles (50th, 90th, 95th, 99th) from a list of latencies
         /// </summary>
-        /// <param name="serviceName">The service name</param>
-        /// <returns>A random endpoint URL</returns>
-        private string GetRandomEndpoint(string serviceName)
+        private List<double> CalculatePercentiles(List<TimeSpan> latencies)
         {
-            var random = new Random();
+            if (latencies == null || latencies.Count == 0)
+                return new List<double> { 0, 0, 0, 0 };
 
-            switch (serviceName)
-            {
-                case "identity":
-                    var identityEndpoints = new[]
-                    {
-                        "/health",
-                        "/auth/user"
-                    };
-                    return identityEndpoints[random.Next(identityEndpoints.Length)];
+            var sortedLatencies = latencies.OrderBy(l => l.TotalMilliseconds).ToList();
+            int count = sortedLatencies.Count;
 
-                case "trading":
-                    var tradingEndpoints = new[]
-                    {
-                        "/health",
-                        "/order/open"
-                    };
-                    return tradingEndpoints[random.Next(tradingEndpoints.Length)];
+            double p50 = count > 0 ? sortedLatencies[(int)(count * 0.5)].TotalMilliseconds : 0;
+            double p90 = count > 0 ? sortedLatencies[(int)(count * 0.9)].TotalMilliseconds : 0;
+            double p95 = count > 0 ? sortedLatencies[(int)(count * 0.95)].TotalMilliseconds : 0;
+            double p99 = count > 0 ? sortedLatencies[(int)(count * 0.99)].TotalMilliseconds : 0;
 
-                case "market-data":
-                    var marketDataEndpoints = new[]
-                    {
-                        "/health",
-                        "/market/symbols",
-                        "/market/ticker?symbol=BTC-USDT",
-                        "/market/summary"
-                    };
-                    return marketDataEndpoints[random.Next(marketDataEndpoints.Length)];
-
-                case "account":
-                    var accountEndpoints = new[]
-                    {
-                        "/health",
-                        "/account/assets"
-                    };
-                    return accountEndpoints[random.Next(accountEndpoints.Length)];
-
-                case "risk":
-                    var riskEndpoints = new[]
-                    {
-                        "/health",
-                        "/risk/limits"
-                    };
-                    return riskEndpoints[random.Next(riskEndpoints.Length)];
-
-                case "notification":
-                    var notificationEndpoints = new[]
-                    {
-                        "/health",
-                        "/notifications"
-                    };
-                    return notificationEndpoints[random.Next(notificationEndpoints.Length)];
-
-                case "match-making":
-                    var matchMakingEndpoints = new[]
-                    {
-                        "/health",
-                        "/match/status"
-                    };
-                    return matchMakingEndpoints[random.Next(matchMakingEndpoints.Length)];
-
-                default:
-                    return "/health";
-            }
+            return new List<double> { p50, p90, p95, p99 };
         }
 
         /// <summary>
-        /// Summarizes the stress test results
+        /// Updates the progress tracker
         /// </summary>
-        private async Task SummarizeResultsAsync()
+        private void UpdateProgress(string message, int percentage, int completed = 0, int total = 0)
         {
-            // Calculate statistics
-            int totalRequests = _results.Count;
-            int successfulRequests = _results.Count(r => r.Success);
-            int failedRequests = totalRequests - successfulRequests;
-            double successRate = totalRequests > 0 ? (double)successfulRequests / totalRequests * 100 : 0;
+            // Replace any square brackets in the message to avoid markup parsing errors
+            string safeMessage = message?.Replace("[", "").Replace("]", "") ?? "";
 
-            TimeSpan averageLatency = TimeSpan.Zero;
-            TimeSpan minLatency = TimeSpan.MaxValue;
-            TimeSpan maxLatency = TimeSpan.Zero;
-
-            if (totalRequests > 0)
+            _progress?.Report(new TestProgress
             {
-                averageLatency = TimeSpan.FromTicks((long)_results.Average(r => r.Duration.Ticks));
-                minLatency = TimeSpan.FromTicks(_results.Min(r => r.Duration.Ticks));
-                maxLatency = TimeSpan.FromTicks(_results.Max(r => r.Duration.Ticks));
-            }
-
-            // Calculate requests per second
-            double requestsPerSecond = totalRequests / (double)_durationSeconds;
-
-            // Display summary
-            AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine("[bold]Stress Test Results[/]");
-            AnsiConsole.WriteLine($"Target Service: {_targetService}");
-            AnsiConsole.WriteLine($"Duration: {_durationSeconds} seconds");
-            AnsiConsole.WriteLine($"Concurrency: {_concurrency}");
-            AnsiConsole.WriteLine($"Total Requests: {totalRequests}");
-            AnsiConsole.WriteLine($"Successful Requests: {successfulRequests} ({successRate:F1}%)");
-            AnsiConsole.WriteLine($"Failed Requests: {failedRequests}");
-            AnsiConsole.WriteLine($"Requests Per Second: {requestsPerSecond:F1}");
-            AnsiConsole.WriteLine($"Average Latency: {averageLatency.TotalMilliseconds:F2}ms");
-            AnsiConsole.WriteLine($"Min Latency: {minLatency.TotalMilliseconds:F2}ms");
-            AnsiConsole.WriteLine($"Max Latency: {maxLatency.TotalMilliseconds:F2}ms");
-            AnsiConsole.WriteLine();
+                Message = safeMessage,
+                Percentage = percentage,
+                Completed = completed,
+                Total = total
+            });
         }
     }
 
     /// <summary>
-    /// Represents the result of a stress test request
+    /// Represents a single request result
     /// </summary>
-    internal class RequestResult
+    public class RequestResult
     {
         public bool Success { get; set; }
         public TimeSpan Duration { get; set; }
         public int StatusCode { get; set; }
         public Exception Exception { get; set; }
+    }
+
+    /// <summary>
+    /// Represents the progress of a test
+    /// </summary>
+    public class TestProgress
+    {
+        public string Message { get; set; }
+        public int Percentage { get; set; }
+        public int Completed { get; set; }
+        public int Total { get; set; }
+    }
+
+    /// <summary>
+    /// Represents the result of a stress test
+    /// </summary>
+    public class TestResult
+    {
+        public bool Success { get; set; }
+        public string ErrorMessage { get; set; }
+        public int TotalRequests { get; set; }
+        public int SuccessfulRequests { get; set; }
+        public int FailedRequests { get; set; }
+        public TimeSpan AverageLatency { get; set; }
+        public TimeSpan MinLatency { get; set; }
+        public TimeSpan MaxLatency { get; set; }
+        public List<double> Percentiles { get; set; } = new List<double>();
+        public DateTime StartTime { get; set; }
+        public DateTime EndTime { get; set; }
+        public TimeSpan ElapsedTime { get; set; }
+        public double OrdersPerSecond { get; set; }
+        public string TestFolderPath { get; set; }
     }
 }

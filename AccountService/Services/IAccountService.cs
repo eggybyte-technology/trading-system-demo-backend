@@ -68,7 +68,7 @@ namespace AccountService.Services
         /// <param name="address">Destination address</param>
         /// <param name="memo">Optional memo/tag for certain assets</param>
         /// <returns>Withdrawal request</returns>
-        Task<WithdrawalRequest> CreateWithdrawalAsync(
+        Task<Withdrawal> CreateWithdrawalAsync(
             string userId,
             string asset,
             decimal amount,
@@ -81,7 +81,7 @@ namespace AccountService.Services
         /// <param name="userId">The user ID (as string)</param>
         /// <param name="withdrawalId">The withdrawal ID (as string)</param>
         /// <returns>Withdrawal request or null if not found</returns>
-        Task<WithdrawalRequest?> GetWithdrawalByIdAsync(string userId, string withdrawalId);
+        Task<Withdrawal?> GetWithdrawalByIdAsync(string userId, string withdrawalId);
 
         /// <summary>
         /// Gets available assets

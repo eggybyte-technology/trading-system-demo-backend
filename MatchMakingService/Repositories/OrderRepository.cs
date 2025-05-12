@@ -146,7 +146,8 @@ namespace MatchMakingService.Repositories
         /// <summary>
         /// Unlocks orders that have been locked for more than the specified timeout (in seconds)
         /// </summary>
-        public async Task UnlockTimedOutOrdersAsync(int timeoutSeconds = 60, CancellationToken cancellationToken = default)
+        /// <returns>The number of orders that were unlocked</returns>
+        public async Task<int> UnlockTimedOutOrdersAsync(int timeoutSeconds = 60, CancellationToken cancellationToken = default)
         {
             var cutoffTime = DateTime.UtcNow.AddSeconds(-timeoutSeconds);
 
@@ -160,7 +161,8 @@ namespace MatchMakingService.Repositories
                 .Set(o => o.LockedAt, null)
                 .Set(o => o.LockedByJobId, null);
 
-            await _orderCollection.UpdateManyAsync(filter, update, cancellationToken: cancellationToken);
+            var result = await _orderCollection.UpdateManyAsync(filter, update, cancellationToken: cancellationToken);
+            return (int)result.ModifiedCount;
         }
 
         /// <summary>

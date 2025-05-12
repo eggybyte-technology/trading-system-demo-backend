@@ -7,9 +7,9 @@ using MongoDB.Driver;
 namespace CommonLib.Models.Account
 {
     /// <summary>
-    /// Withdrawal request
+    /// Withdrawal request model
     /// </summary>
-    public class WithdrawalRequest : IndexedModel<WithdrawalRequest>
+    public class Withdrawal : IndexedModel<Withdrawal>
     {
         /// <summary>
         /// Database name
@@ -19,7 +19,7 @@ namespace CommonLib.Models.Account
         /// <summary>
         /// Collection name
         /// </summary>
-        public override string Collection => "WithdrawalRequests";
+        public override string Collection => "Withdrawals";
 
         /// <summary>
         /// User ID
@@ -46,55 +46,49 @@ namespace CommonLib.Models.Account
         public string Address { get; set; } = string.Empty;
 
         /// <summary>
-        /// Memo/tag (for assets that require it)
+        /// Optional memo/tag for certain assets
         /// </summary>
         [BsonElement("memo")]
         public string? Memo { get; set; }
 
         /// <summary>
-        /// Withdrawal status (pending, processing, completed, rejected)
+        /// Withdrawal status (pending, completed, rejected, etc.)
         /// </summary>
         [BsonElement("status")]
         public string Status { get; set; } = "pending";
 
         /// <summary>
-        /// Request creation time
+        /// Creation time
         /// </summary>
         [BsonElement("createdAt")]
-        public DateTime CreatedAt { get; set; }
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         /// <summary>
-        /// Request completion time
+        /// Last update time
+        /// </summary>
+        [BsonElement("updatedAt")]
+        public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+
+        /// <summary>
+        /// Completion time
         /// </summary>
         [BsonElement("completedAt")]
         public DateTime? CompletedAt { get; set; }
 
         /// <summary>
-        /// Rejection reason if rejected
-        /// </summary>
-        [BsonElement("rejectionReason")]
-        public string? RejectionReason { get; set; }
-
-        /// <summary>
-        /// Associated transaction ID
-        /// </summary>
-        [BsonElement("transactionId")]
-        public ObjectId? TransactionId { get; set; }
-
-        /// <summary>
         /// Gets the list of indexes for this model
         /// </summary>
         /// <returns>A list of index definitions with their uniqueness flag</returns>
-        public override List<Tuple<IndexKeysDefinition<WithdrawalRequest>, bool>> GetIndexes()
+        public override List<Tuple<IndexKeysDefinition<Withdrawal>, bool>> GetIndexes()
         {
-            return new List<Tuple<IndexKeysDefinition<WithdrawalRequest>, bool>>
+            return new List<Tuple<IndexKeysDefinition<Withdrawal>, bool>>
             {
-                new Tuple<IndexKeysDefinition<WithdrawalRequest>, bool>(
-                    Builders<WithdrawalRequest>.IndexKeys.Ascending(w => w.UserId),
+                new Tuple<IndexKeysDefinition<Withdrawal>, bool>(
+                    Builders<Withdrawal>.IndexKeys.Ascending(w => w.UserId),
                     false
                 ),
-                new Tuple<IndexKeysDefinition<WithdrawalRequest>, bool>(
-                    Builders<WithdrawalRequest>.IndexKeys.Ascending(w => w.Status),
+                new Tuple<IndexKeysDefinition<Withdrawal>, bool>(
+                    Builders<Withdrawal>.IndexKeys.Ascending(w => w.Status),
                     false
                 )
             };
