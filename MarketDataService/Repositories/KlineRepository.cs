@@ -45,20 +45,24 @@ namespace MarketDataService.Repositories
         }
 
         /// <inheritdoc />
-        public async Task<List<Kline>> GetKlinesAsync(string symbolName, string interval, DateTime? startTime = null, DateTime? endTime = null, int limit = 500)
+        public async Task<Kline?> GetKlineAsync(string symbol, string interval, DateTime startTime)
+        {
+            var filter = Builders<Kline>.Filter
+                .Eq(k => k.Symbol, symbol) &
+                Builders<Kline>.Filter.Eq(k => k.Interval, interval) &
+                Builders<Kline>.Filter.Eq(k => k.OpenTime, startTime);
+
+            return await _klines.Find(filter).FirstOrDefaultAsync();
+        }
+
+        /// <inheritdoc />
+        public async Task<List<Kline>> GetKlinesAsync(string symbol, string interval, DateTime startTime, DateTime endTime, int limit = 500)
         {
             var filterBuilder = Builders<Kline>.Filter;
-            var filter = filterBuilder.Eq(k => k.Symbol, symbolName) & filterBuilder.Eq(k => k.Interval, interval);
-
-            if (startTime.HasValue)
-            {
-                filter = filter & filterBuilder.Gte(k => k.OpenTime, startTime.Value);
-            }
-
-            if (endTime.HasValue)
-            {
-                filter = filter & filterBuilder.Lte(k => k.OpenTime, endTime.Value);
-            }
+            var filter = filterBuilder.Eq(k => k.Symbol, symbol) &
+                         filterBuilder.Eq(k => k.Interval, interval) &
+                         filterBuilder.Gte(k => k.OpenTime, startTime) &
+                         filterBuilder.Lte(k => k.OpenTime, endTime);
 
             return await _klines.Find(filter)
                 .Sort(Builders<Kline>.Sort.Ascending(k => k.OpenTime))
@@ -67,19 +71,40 @@ namespace MarketDataService.Repositories
         }
 
         /// <inheritdoc />
-        public async Task<Kline> GetKlineByIdAsync(ObjectId id)
+        public async Task<Kline?> GetLatestKlineAsync(string symbol, string interval)
         {
-            return await _klines.Find(k => k.Id == id).FirstOrDefaultAsync();
+            var filter = Builders<Kline>.Filter
+                .Eq(k => k.Symbol, symbol) &
+                Builders<Kline>.Filter.Eq(k => k.Interval, interval);
+
+            return await _klines.Find(filter)
+                .Sort(Builders<Kline>.Sort.Descending(k => k.OpenTime))
+                .Limit(1)
+                .FirstOrDefaultAsync();
         }
 
         /// <inheritdoc />
-        public async Task<Kline> CreateKlineAsync(Kline kline)
+        public async Task<Kline> UpsertKlineAsync(Kline kline)
         {
-            await _klines.InsertOneAsync(kline);
+            var filter = Builders<Kline>.Filter
+                .Eq(k => k.Symbol, kline.Symbol) &
+                Builders<Kline>.Filter.Eq(k => k.Interval, kline.Interval) &
+                Builders<Kline>.Filter.Eq(k => k.OpenTime, kline.OpenTime);
+
+            var options = new ReplaceOptions { IsUpsert = true };
+            await _klines.ReplaceOneAsync(filter, kline, options);
             return kline;
         }
 
         /// <inheritdoc />
+        public async Task<int> DeleteKlinesAsync(string symbol)
+        {
+            var filter = Builders<Kline>.Filter.Eq(k => k.Symbol, symbol);
+            var result = await _klines.DeleteManyAsync(filter);
+            return (int)result.DeletedCount;
+        }
+
+        // Implementation for internal use
         public async Task<int> UpsertKlinesAsync(List<Kline> klines)
         {
             if (klines == null || klines.Count == 0)

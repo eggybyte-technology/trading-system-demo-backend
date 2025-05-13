@@ -17,21 +17,39 @@ namespace CommonLib.Api
 
         #region Market Data Queries
 
+        /// <summary>
+        /// Gets all available trading symbols
+        /// </summary>
+        /// <returns>List of symbols</returns>
         public async Task<SymbolsResponse> GetSymbolsAsync()
         {
             return await GetAsync<SymbolsResponse>("/market/symbols");
         }
 
+        /// <summary>
+        /// Gets ticker data for a specific symbol
+        /// </summary>
+        /// <param name="symbol">The symbol name (e.g., BTC-USDT)</param>
+        /// <returns>Ticker data for the symbol</returns>
         public async Task<TickerResponse> GetTickerAsync(string symbol)
         {
             return await GetAsync<TickerResponse>($"/market/ticker?symbol={Uri.EscapeDataString(symbol)}");
         }
 
+        /// <summary>
+        /// Gets market summary for all trading pairs
+        /// </summary>
+        /// <returns>Market summary with all tickers</returns>
         public async Task<MarketSummaryResponse> GetMarketSummaryAsync()
         {
             return await GetAsync<MarketSummaryResponse>("/market/summary");
         }
 
+        /// <summary>
+        /// Gets the order book (market depth) for a symbol
+        /// </summary>
+        /// <param name="request">Market depth request with symbol and limit</param>
+        /// <returns>Order book data</returns>
         public async Task<MarketDepthResponse> GetOrderBookDepthAsync(MarketDepthRequest request)
         {
             var queryParams = new Dictionary<string, string?>
@@ -44,6 +62,11 @@ namespace CommonLib.Api
             return await GetAsync<MarketDepthResponse>($"/market/depth?{queryString}");
         }
 
+        /// <summary>
+        /// Gets kline (candlestick) data for a symbol
+        /// </summary>
+        /// <param name="request">Kline request with symbol, interval, and time range</param>
+        /// <returns>Kline data</returns>
         public async Task<KlineResponse> GetKlinesAsync(KlineRequest request)
         {
             var queryParams = new Dictionary<string, string?>
@@ -59,6 +82,11 @@ namespace CommonLib.Api
             return await GetAsync<KlineResponse>($"/market/klines?{queryString}");
         }
 
+        /// <summary>
+        /// Gets recent trades for a symbol
+        /// </summary>
+        /// <param name="request">Recent trades request with symbol and limit</param>
+        /// <returns>Recent trades data</returns>
         public async Task<TradesResponse> GetRecentTradesAsync(RecentTradesRequest request)
         {
             var queryParams = new Dictionary<string, string?>

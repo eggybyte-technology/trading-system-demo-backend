@@ -53,36 +53,56 @@ namespace SimulationTest.Tests
         /// </summary>
         private void InitializeTestDependencies()
         {
-            // Identity Service test dependencies
+            // Identity Service dependencies
             _testDependencies["Register"] = new List<string>();
             _testDependencies["Login"] = new List<string> { "Register" };
-            _testDependencies["GetCurrentUser"] = new List<string> { "Login" };
-            _testDependencies["UpdateUser"] = new List<string> { "GetCurrentUser" };
             _testDependencies["RefreshToken"] = new List<string> { "Login" };
+            _testDependencies["GetUserInfo"] = new List<string> { "Login" };
+            _testDependencies["UpdateUserInfo"] = new List<string> { "Login" };
 
-            // Market Data Service tests have no dependencies
-            _testDependencies["GetSymbols"] = new List<string>();
+            // Market Data Service dependencies
+            _testDependencies["GetSymbols"] = new List<string> { "Login" };
             _testDependencies["GetTicker"] = new List<string> { "GetSymbols" };
-            _testDependencies["GetMarketSummary"] = new List<string>();
+            _testDependencies["GetMarketSummary"] = new List<string> { "Login" };
             _testDependencies["GetOrderBookDepth"] = new List<string> { "GetSymbols" };
             _testDependencies["GetKlines"] = new List<string> { "GetSymbols" };
             _testDependencies["GetRecentTrades"] = new List<string> { "GetSymbols" };
+            _testDependencies["UpdateOrderBook"] = new List<string> { "GetSymbols", "Login" };
+            _testDependencies["CreateSymbol"] = new List<string> { "Login" };
+            _testDependencies["UpdateSymbol"] = new List<string> { "GetSymbols", "Login" };
+            _testDependencies["ProcessTradeForKline"] = new List<string> { "GetSymbols", "Login" };
 
-            // Account Service test dependencies
+            // Account Service dependencies
             _testDependencies["GetBalance"] = new List<string> { "Login" };
-            _testDependencies["CreateDeposit"] = new List<string> { "GetBalance" };
-            _testDependencies["CreateWithdrawal"] = new List<string> { "GetBalance" };
+            _testDependencies["CreateDeposit"] = new List<string> { "Login" };
+            _testDependencies["CreateWithdrawal"] = new List<string> { "CreateDeposit", "GetBalance" };
             _testDependencies["GetWithdrawalStatus"] = new List<string> { "CreateWithdrawal" };
-            _testDependencies["GetTransactions"] = new List<string> { "Login" };
+            _testDependencies["GetTransactions"] = new List<string> { "CreateDeposit" };
             _testDependencies["GetAssets"] = new List<string> { "Login" };
 
-            // Trading Service test dependencies
+            // Trading Service dependencies
             _testDependencies["CreateOrder"] = new List<string> { "Login", "GetSymbols" };
             _testDependencies["GetOrderDetails"] = new List<string> { "CreateOrder" };
-            _testDependencies["GetOpenOrders"] = new List<string> { "Login" };
+            _testDependencies["GetOpenOrders"] = new List<string> { "CreateOrder" };
+            _testDependencies["LockOrder"] = new List<string> { "CreateOrder" };
+            _testDependencies["UnlockOrder"] = new List<string> { "LockOrder" };
+            _testDependencies["UpdateOrderStatus"] = new List<string> { "CreateOrder" };
             _testDependencies["CancelOrder"] = new List<string> { "CreateOrder" };
-            _testDependencies["GetOrderHistory"] = new List<string> { "Login" };
+            _testDependencies["GetOrderHistory"] = new List<string> { "CancelOrder" };
             _testDependencies["GetTradeHistory"] = new List<string> { "Login" };
+
+            // Risk Service dependencies
+            _testDependencies["GetRiskProfile"] = new List<string> { "Login" };
+            _testDependencies["GetTradingLimits"] = new List<string> { "Login" };
+            _testDependencies["GetRiskAlerts"] = new List<string> { "Login" };
+            _testDependencies["AcknowledgeAlert"] = new List<string> { "GetRiskAlerts" };
+
+            // Notification Service dependencies
+            _testDependencies["GetNotifications"] = new List<string> { "Login" };
+            _testDependencies["GetNotificationSettings"] = new List<string> { "Login" };
+            _testDependencies["UpdateNotificationSettings"] = new List<string> { "GetNotificationSettings" };
+            _testDependencies["MarkNotificationAsRead"] = new List<string> { "GetNotifications" };
+            _testDependencies["DeleteNotification"] = new List<string> { "GetNotifications" };
         }
 
         /// <summary>
@@ -173,31 +193,31 @@ namespace SimulationTest.Tests
                     }
                 }
 
-                if (CanRunTest("GetCurrentUser"))
+                if (CanRunTest("GetUserInfo"))
                 {
                     try
                     {
                         await identityTest.TestGetCurrentUserAsync();
-                        RecordTestResult("GetCurrentUser", true);
+                        RecordTestResult("GetUserInfo", true);
                     }
                     catch (Exception ex)
                     {
-                        RecordTestResult("GetCurrentUser", false);
-                        _logger.Error($"GetCurrentUser test failed: {ex.Message}");
+                        RecordTestResult("GetUserInfo", false);
+                        _logger.Error($"GetUserInfo test failed: {ex.Message}");
                     }
                 }
 
-                if (CanRunTest("UpdateUser"))
+                if (CanRunTest("UpdateUserInfo"))
                 {
                     try
                     {
                         await identityTest.TestUpdateUserAsync();
-                        RecordTestResult("UpdateUser", true);
+                        RecordTestResult("UpdateUserInfo", true);
                     }
                     catch (Exception ex)
                     {
-                        RecordTestResult("UpdateUser", false);
-                        _logger.Error($"UpdateUser test failed: {ex.Message}");
+                        RecordTestResult("UpdateUserInfo", false);
+                        _logger.Error($"UpdateUserInfo test failed: {ex.Message}");
                     }
                 }
 
@@ -295,6 +315,62 @@ namespace SimulationTest.Tests
                     {
                         RecordTestResult("GetRecentTrades", false);
                         _logger.Error($"GetRecentTrades test failed: {ex.Message}");
+                    }
+                }
+
+                if (CanRunTest("UpdateOrderBook"))
+                {
+                    try
+                    {
+                        await marketDataTest.TestUpdateOrderBookAsync();
+                        RecordTestResult("UpdateOrderBook", true);
+                    }
+                    catch (Exception ex)
+                    {
+                        RecordTestResult("UpdateOrderBook", false);
+                        _logger.Error($"UpdateOrderBook test failed: {ex.Message}");
+                    }
+                }
+
+                if (CanRunTest("CreateSymbol"))
+                {
+                    try
+                    {
+                        await marketDataTest.TestCreateSymbolAsync();
+                        RecordTestResult("CreateSymbol", true);
+                    }
+                    catch (Exception ex)
+                    {
+                        RecordTestResult("CreateSymbol", false);
+                        _logger.Error($"CreateSymbol test failed: {ex.Message}");
+                    }
+                }
+
+                if (CanRunTest("UpdateSymbol"))
+                {
+                    try
+                    {
+                        await marketDataTest.TestUpdateSymbolAsync();
+                        RecordTestResult("UpdateSymbol", true);
+                    }
+                    catch (Exception ex)
+                    {
+                        RecordTestResult("UpdateSymbol", false);
+                        _logger.Error($"UpdateSymbol test failed: {ex.Message}");
+                    }
+                }
+
+                if (CanRunTest("ProcessTradeForKline"))
+                {
+                    try
+                    {
+                        await marketDataTest.TestProcessTradeForKlineAsync();
+                        RecordTestResult("ProcessTradeForKline", true);
+                    }
+                    catch (Exception ex)
+                    {
+                        RecordTestResult("ProcessTradeForKline", false);
+                        _logger.Error($"ProcessTradeForKline test failed: {ex.Message}");
                     }
                 }
 
@@ -431,6 +507,48 @@ namespace SimulationTest.Tests
                     {
                         RecordTestResult("GetOpenOrders", false);
                         _logger.Error($"GetOpenOrders test failed: {ex.Message}");
+                    }
+                }
+
+                if (CanRunTest("LockOrder"))
+                {
+                    try
+                    {
+                        await tradingTest.TestLockOrderAsync();
+                        RecordTestResult("LockOrder", true);
+                    }
+                    catch (Exception ex)
+                    {
+                        RecordTestResult("LockOrder", false);
+                        _logger.Error($"LockOrder test failed: {ex.Message}");
+                    }
+                }
+
+                if (CanRunTest("UnlockOrder"))
+                {
+                    try
+                    {
+                        await tradingTest.TestUnlockOrderAsync();
+                        RecordTestResult("UnlockOrder", true);
+                    }
+                    catch (Exception ex)
+                    {
+                        RecordTestResult("UnlockOrder", false);
+                        _logger.Error($"UnlockOrder test failed: {ex.Message}");
+                    }
+                }
+
+                if (CanRunTest("UpdateOrderStatus"))
+                {
+                    try
+                    {
+                        await tradingTest.TestUpdateOrderStatusAsync();
+                        RecordTestResult("UpdateOrderStatus", true);
+                    }
+                    catch (Exception ex)
+                    {
+                        RecordTestResult("UpdateOrderStatus", false);
+                        _logger.Error($"UpdateOrderStatus test failed: {ex.Message}");
                     }
                 }
 

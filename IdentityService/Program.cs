@@ -318,6 +318,35 @@ app.UseAuthorization();
 app.MapControllers();
 app.MapHealthChecks("/health");
 
+// ======================================================
+// GENERATE ADMIN TOKEN ON STARTUP
+// ======================================================
+try
+{
+    var jwtService = app.Services.GetRequiredService<JwtService>();
+    var adminId = "admin";
+    var adminUsername = "admin";
+    var adminEmail = "admin@tradingsystem.com";
+    var adminRoles = new List<string> { "Admin", "User", "Manager" };
+
+    var (token, expiration) = jwtService.GenerateJwtToken(
+        adminId,
+        adminUsername,
+        adminEmail,
+        adminRoles,
+        new Dictionary<string, string> { { "IsSystemToken", "true" } }
+    );
+
+    logger.LogInformation("========== ADMIN TOKEN GENERATED ==========");
+    logger.LogInformation($"Admin Token: {token}");
+    logger.LogInformation($"Expiration: {expiration}");
+    logger.LogInformation("===========================================");
+}
+catch (Exception ex)
+{
+    logger.LogError($"Failed to generate admin token: {ex.Message}");
+}
+
 // Start the application
 logger.LogInformation("IdentityService started successfully");
 app.Run();

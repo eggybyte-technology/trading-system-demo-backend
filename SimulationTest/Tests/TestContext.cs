@@ -31,6 +31,11 @@ namespace SimulationTest.Tests
         public string Token { get; set; }
 
         /// <summary>
+        /// Admin authentication token for privileged operations
+        /// </summary>
+        public string AdminToken { get; set; }
+
+        /// <summary>
         /// Refresh token for authentication
         /// </summary>
         public string RefreshToken { get; set; }
@@ -44,6 +49,11 @@ namespace SimulationTest.Tests
         /// Order ID from order creation
         /// </summary>
         public string OrderId { get; set; }
+
+        /// <summary>
+        /// Order lock ID for testing lock operations
+        /// </summary>
+        public string OrderLockId { get; set; }
 
         /// <summary>
         /// Deposit ID from deposit creation

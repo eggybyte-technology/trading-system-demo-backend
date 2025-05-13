@@ -50,6 +50,7 @@ builder.Services.AddScoped<IOrderBookRepository, OrderBookRepository>();
 builder.Services.AddScoped<ISymbolRepository, SymbolRepository>();
 builder.Services.AddScoped<IKlineRepository, KlineRepository>();
 builder.Services.AddScoped<ITradeRepository, TradeRepository>();
+builder.Services.AddScoped<IMarketDataRepository, MarketDataRepository>();
 
 // Register Market-specific services
 builder.Services.AddScoped<IMarketService, MarketService>();
@@ -252,6 +253,70 @@ app.UseAuthorization();
 // Configure endpoints
 app.MapControllers();
 app.MapHealthChecks("/health");
+
+// ======================================================
+// CREATE DEFAULT SYMBOLS
+// ======================================================
+try
+{
+    logger.LogInformation("Checking for default symbols...");
+
+    // Get symbol repository from DI
+    using var scope = app.Services.CreateScope();
+    var symbolRepository = scope.ServiceProvider.GetRequiredService<ISymbolRepository>();
+
+    // Define default symbols
+    var defaultSymbols = new List<(string Name, string BaseAsset, string QuoteAsset)>
+    {
+        ("BTC-USDT", "BTC", "USDT"),
+        ("ETH-USDT", "ETH", "USDT"),
+        ("ETH-BTC", "ETH", "BTC")
+    };
+
+    foreach (var symbolInfo in defaultSymbols)
+    {
+        // Check if symbol already exists
+        var existingSymbol = await symbolRepository.GetSymbolByNameAsync(symbolInfo.Name);
+        if (existingSymbol == null)
+        {
+            // Create new symbol
+            var symbol = new CommonLib.Models.Market.Symbol
+            {
+                Name = symbolInfo.Name,
+                BaseAsset = symbolInfo.BaseAsset,
+                QuoteAsset = symbolInfo.QuoteAsset,
+                BaseAssetPrecision = 8,
+                QuotePrecision = 8,
+                MinPrice = 0.00000001m,
+                MaxPrice = 1000000m,
+                TickSize = 0.00000001m,
+                MinQty = 0.00000001m,
+                MaxQty = 1000000m,
+                StepSize = 0.00000001m,
+                IsActive = true,
+                MinOrderSize = 0.0001m,
+                MaxOrderSize = 100000m,
+                TakerFee = 0.001m,
+                MakerFee = 0.0005m,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+
+            var createdSymbol = await symbolRepository.CreateSymbolAsync(symbol);
+            logger.LogInformation($"Created default symbol: {createdSymbol.Name}");
+        }
+        else
+        {
+            logger.LogInformation($"Default symbol already exists: {existingSymbol.Name}");
+        }
+    }
+
+    logger.LogInformation("Default symbols check completed");
+}
+catch (Exception ex)
+{
+    logger.LogError($"Error creating default symbols: {ex.Message}");
+}
 
 // Start the application
 logger.LogInformation("MarketDataService started successfully");

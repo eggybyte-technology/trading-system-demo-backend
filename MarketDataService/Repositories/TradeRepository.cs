@@ -43,29 +43,21 @@ namespace MarketDataService.Repositories
         }
 
         /// <inheritdoc />
-        public async Task<List<Trade>> GetRecentTradesAsync(string symbolName, int limit = 100)
+        public async Task<List<Trade>> GetRecentTradesAsync(string symbol, int limit = 100)
         {
-            return await _trades.Find(t => t.Symbol == symbolName)
+            return await _trades.Find(t => t.Symbol == symbol)
                 .Sort(Builders<Trade>.Sort.Descending(t => t.CreatedAt))
                 .Limit(limit)
                 .ToListAsync();
         }
 
         /// <inheritdoc />
-        public async Task<List<Trade>> GetTradesInTimeRangeAsync(string symbolName, DateTime? startTime = null, DateTime? endTime = null, int limit = 500)
+        public async Task<List<Trade>> GetTradesInTimeRangeAsync(string symbol, DateTime startTime, DateTime endTime, int limit = 1000)
         {
             var filterBuilder = Builders<Trade>.Filter;
-            var filter = filterBuilder.Eq(t => t.Symbol, symbolName);
-
-            if (startTime.HasValue)
-            {
-                filter = filter & filterBuilder.Gte(t => t.CreatedAt, startTime.Value);
-            }
-
-            if (endTime.HasValue)
-            {
-                filter = filter & filterBuilder.Lte(t => t.CreatedAt, endTime.Value);
-            }
+            var filter = filterBuilder.Eq(t => t.Symbol, symbol) &
+                         filterBuilder.Gte(t => t.CreatedAt, startTime) &
+                         filterBuilder.Lte(t => t.CreatedAt, endTime);
 
             return await _trades.Find(filter)
                 .Sort(Builders<Trade>.Sort.Ascending(t => t.CreatedAt))
@@ -77,6 +69,20 @@ namespace MarketDataService.Repositories
         public async Task<Trade> GetTradeByIdAsync(ObjectId id)
         {
             return await _trades.Find(t => t.Id == id).FirstOrDefaultAsync();
+        }
+
+        /// <inheritdoc />
+        public async Task<Trade> SaveTradeAsync(Trade trade)
+        {
+            if (trade.Id == ObjectId.Empty)
+            {
+                await AddTradeAsync(trade);
+            }
+            else
+            {
+                await _trades.ReplaceOneAsync(t => t.Id == trade.Id, trade);
+            }
+            return trade;
         }
 
         /// <inheritdoc />

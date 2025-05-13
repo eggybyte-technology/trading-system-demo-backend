@@ -261,11 +261,227 @@ namespace SimulationTest.Tests
             var stopwatch = Stopwatch.StartNew();
             try
             {
-                var result = await _marketDataService.GetRecentTradesAsync(_context.TestSymbol, 10);
+                var tradesRequest = new RecentTradesRequest
+                {
+                    Symbol = _context.TestSymbol,
+                    Limit = 10
+                };
+
+                var result = await _marketDataService.GetRecentTradesAsync(tradesRequest);
 
                 // Verify response
                 if (result == null)
                     throw new AssertionException("Recent trades response should not be null");
+
+                stopwatch.Stop();
+                ReportSuccess(operationType, stopwatch.ElapsedMilliseconds);
+                _logger.Success($"Test passed: {operationType} ({stopwatch.ElapsedMilliseconds} ms)");
+
+                return result;
+            }
+            catch (AssertionException ex)
+            {
+                stopwatch.Stop();
+                ReportFailure(operationType, ex.Message, stopwatch.ElapsedMilliseconds);
+                _logger.Error($"Test failed: {operationType} - Assertion failed: {ex.Message}");
+                throw;
+            }
+            catch (Exception ex)
+            {
+                stopwatch.Stop();
+                ReportFailure(operationType, ex.Message, stopwatch.ElapsedMilliseconds);
+                _logger.Error($"Test failed: {operationType} - {ex.Message}");
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Test updating order book
+        /// </summary>
+        public async Task<OrderBookUpdateResponse> TestUpdateOrderBookAsync()
+        {
+            string operationType = "MarketDataService.UpdateOrderBookAsync";
+            _logger.Info($"Executing test: {operationType}");
+
+            var stopwatch = Stopwatch.StartNew();
+            try
+            {
+                var request = new OrderBookUpdateRequest
+                {
+                    Symbol = _context.TestSymbol,
+                    Bids = new List<List<decimal>>
+                    {
+                        new List<decimal> { 1000.0m, 1.0m },
+                        new List<decimal> { 990.0m, 2.0m },
+                    },
+                    Asks = new List<List<decimal>>
+                    {
+                        new List<decimal> { 1010.0m, 1.5m },
+                        new List<decimal> { 1020.0m, 2.5m },
+                    }
+                };
+
+                var result = await _marketDataService.UpdateOrderBookAsync(_context.AdminToken, request);
+
+                // Verify response
+                if (result == null)
+                    throw new AssertionException("Order book update response should not be null");
+
+                stopwatch.Stop();
+                ReportSuccess(operationType, stopwatch.ElapsedMilliseconds);
+                _logger.Success($"Test passed: {operationType} ({stopwatch.ElapsedMilliseconds} ms)");
+
+                return result;
+            }
+            catch (AssertionException ex)
+            {
+                stopwatch.Stop();
+                ReportFailure(operationType, ex.Message, stopwatch.ElapsedMilliseconds);
+                _logger.Error($"Test failed: {operationType} - Assertion failed: {ex.Message}");
+                throw;
+            }
+            catch (Exception ex)
+            {
+                stopwatch.Stop();
+                ReportFailure(operationType, ex.Message, stopwatch.ElapsedMilliseconds);
+                _logger.Error($"Test failed: {operationType} - {ex.Message}");
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Test creating a new trading symbol
+        /// </summary>
+        public async Task<SymbolResponse> TestCreateSymbolAsync()
+        {
+            string operationType = "MarketDataService.CreateSymbolAsync";
+            _logger.Info($"Executing test: {operationType}");
+
+            var stopwatch = Stopwatch.StartNew();
+            try
+            {
+                string newSymbol = $"TEST-USDT-{DateTime.Now.Ticks % 10000}";
+                var request = new SymbolCreateRequest
+                {
+                    Name = newSymbol,
+                    BaseAsset = "TEST",
+                    QuoteAsset = "USDT",
+                    MinOrderSize = 0.0001m,
+                    MaxOrderSize = 1000m,
+                    BaseAssetPrecision = 8,
+                    QuotePrecision = 2,
+                    MinPrice = 0.01m,
+                    MaxPrice = 100000m,
+                    TickSize = 0.01m,
+                    MinQty = 0.0001m,
+                    MaxQty = 10000m,
+                    StepSize = 0.0001m,
+                    IsActive = true
+                };
+
+                var result = await _marketDataService.CreateSymbolAsync(_context.AdminToken, request);
+
+                // Verify response
+                if (result == null)
+                    throw new AssertionException("Symbol creation response should not be null");
+                if (!result.Success)
+                    throw new AssertionException($"Symbol creation failed: {result.Message}");
+
+                stopwatch.Stop();
+                ReportSuccess(operationType, stopwatch.ElapsedMilliseconds);
+                _logger.Success($"Test passed: {operationType} ({stopwatch.ElapsedMilliseconds} ms)");
+
+                return result;
+            }
+            catch (AssertionException ex)
+            {
+                stopwatch.Stop();
+                ReportFailure(operationType, ex.Message, stopwatch.ElapsedMilliseconds);
+                _logger.Error($"Test failed: {operationType} - Assertion failed: {ex.Message}");
+                throw;
+            }
+            catch (Exception ex)
+            {
+                stopwatch.Stop();
+                ReportFailure(operationType, ex.Message, stopwatch.ElapsedMilliseconds);
+                _logger.Error($"Test failed: {operationType} - {ex.Message}");
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Test updating a trading symbol
+        /// </summary>
+        public async Task<SymbolResponse> TestUpdateSymbolAsync()
+        {
+            string operationType = "MarketDataService.UpdateSymbolAsync";
+            _logger.Info($"Executing test: {operationType}");
+
+            var stopwatch = Stopwatch.StartNew();
+            try
+            {
+                var request = new SymbolUpdateRequest
+                {
+                    MinOrderSize = 0.001m,
+                    MaxOrderSize = 500m,
+                    IsActive = true
+                };
+
+                var result = await _marketDataService.UpdateSymbolAsync(_context.AdminToken, _context.TestSymbol, request);
+
+                // Verify response
+                if (result == null)
+                    throw new AssertionException("Symbol update response should not be null");
+                if (!result.Success)
+                    throw new AssertionException($"Symbol update failed: {result.Message}");
+
+                stopwatch.Stop();
+                ReportSuccess(operationType, stopwatch.ElapsedMilliseconds);
+                _logger.Success($"Test passed: {operationType} ({stopwatch.ElapsedMilliseconds} ms)");
+
+                return result;
+            }
+            catch (AssertionException ex)
+            {
+                stopwatch.Stop();
+                ReportFailure(operationType, ex.Message, stopwatch.ElapsedMilliseconds);
+                _logger.Error($"Test failed: {operationType} - Assertion failed: {ex.Message}");
+                throw;
+            }
+            catch (Exception ex)
+            {
+                stopwatch.Stop();
+                ReportFailure(operationType, ex.Message, stopwatch.ElapsedMilliseconds);
+                _logger.Error($"Test failed: {operationType} - {ex.Message}");
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Test processing a trade for kline generation
+        /// </summary>
+        public async Task<ApiResponse<bool>> TestProcessTradeForKlineAsync()
+        {
+            string operationType = "MarketDataService.ProcessTradeForKlineAsync";
+            _logger.Info($"Executing test: {operationType}");
+
+            var stopwatch = Stopwatch.StartNew();
+            try
+            {
+                var request = new TradeForKlineRequest
+                {
+                    Symbol = _context.TestSymbol,
+                    Price = 1000.0m,
+                    Quantity = 1.0m,
+                    Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    IsBuyerMaker = false
+                };
+
+                var result = await _marketDataService.ProcessTradeForKlineAsync(_context.AdminToken, request);
+
+                // Verify response
+                if (result == null)
+                    throw new AssertionException("Process trade for kline response should not be null");
 
                 stopwatch.Stop();
                 ReportSuccess(operationType, stopwatch.ElapsedMilliseconds);

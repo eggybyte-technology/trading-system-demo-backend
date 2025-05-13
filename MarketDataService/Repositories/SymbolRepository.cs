@@ -33,6 +33,12 @@ namespace MarketDataService.Repositories
         }
 
         /// <inheritdoc />
+        public async Task<List<Symbol>> GetActiveSymbolsAsync()
+        {
+            return await _symbols.Find(symbol => symbol.IsActive).ToListAsync();
+        }
+
+        /// <inheritdoc />
         public async Task<Symbol> GetSymbolByNameAsync(string symbolName)
         {
             return await _symbols.Find(symbol => symbol.Name == symbolName).FirstOrDefaultAsync();
@@ -52,13 +58,13 @@ namespace MarketDataService.Repositories
         }
 
         /// <inheritdoc />
-        public async Task<bool> UpdateSymbolAsync(Symbol symbol)
+        public async Task<Symbol> UpdateSymbolAsync(Symbol symbol)
         {
-            var updateResult = await _symbols.ReplaceOneAsync(
+            await _symbols.ReplaceOneAsync(
                 s => s.Id == symbol.Id,
                 symbol);
 
-            return updateResult.IsAcknowledged && updateResult.ModifiedCount > 0;
+            return symbol;
         }
 
         /// <inheritdoc />
