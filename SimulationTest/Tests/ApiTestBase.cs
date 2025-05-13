@@ -255,11 +255,8 @@ namespace SimulationTest.Tests
             }
             else
             {
-                // Always show response structure (first 100 chars) for debugging
-                string previewContent = responseContent.Length > 100 ?
-                    responseContent.Substring(0, 97) + "..." :
-                    responseContent;
-                Console.WriteLine($"GET {endpoint} response preview: {previewContent}");
+                // Always show full response preview instead of truncating to 100 chars
+                Console.WriteLine($"GET {endpoint} response preview: {responseContent}");
             }
 
             try
@@ -327,11 +324,8 @@ namespace SimulationTest.Tests
             }
             else
             {
-                // Always show response structure (first 100 chars) for debugging
-                string previewContent = responseContent.Length > 100 ?
-                    responseContent.Substring(0, 97) + "..." :
-                    responseContent;
-                Console.WriteLine($"POST {endpoint} response preview: {previewContent}");
+                // Always show full response preview instead of truncating to 100 chars
+                Console.WriteLine($"POST {endpoint} response preview: {responseContent}");
             }
 
             try
@@ -399,11 +393,8 @@ namespace SimulationTest.Tests
             }
             else
             {
-                // Always show response structure (first 100 chars) for debugging
-                string previewContent = responseContent.Length > 100 ?
-                    responseContent.Substring(0, 97) + "..." :
-                    responseContent;
-                Console.WriteLine($"PUT {endpoint} response preview: {previewContent}");
+                // Always show full response preview instead of truncating to 100 chars
+                Console.WriteLine($"PUT {endpoint} response preview: {responseContent}");
             }
 
             try

@@ -479,11 +479,23 @@ namespace SimulationTest.Core
                             _progressTracker.LogMessage("");
                         }
 
-                        // Update progress tracker
+                        // Update progress tracker with the test result
                         _progressTracker.UpdateTestResult(testResult ?? ApiTestResult.Failed(method.Name,
                             testResult?.Message ?? (lastException != null ? lastException.Message : "Unknown error"),
                             lastException,
                             TimeSpan.Zero));
+
+                        // Explicitly report progress after each test completes
+                        ReportProgress(
+                            "Running tests",
+                            (int)(100.0 * (passedTests + failedTests + skippedTests) / totalTests),
+                            passedTests + failedTests + skippedTests,
+                            totalTests,
+                            passedTests,
+                            failedTests,
+                            skippedTests,
+                            $"Test '{method.Name}' completed: {(testResult != null && testResult.Success ? "PASSED" : "FAILED")}"
+                        );
                     }
                     catch (Exception ex)
                     {

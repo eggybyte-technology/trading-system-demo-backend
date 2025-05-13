@@ -562,7 +562,7 @@ namespace SimulationTest
                     $"[bold]Skipped:[/] [yellow]{skippedTests}[/]\n" +
                     $"[bold]Pass Rate:[/] [cyan]{passRate:F2}%[/]\n" +
                     $"[bold]Duration:[/] {results.Elapsed.TotalSeconds:F2} seconds"
-                ).ToString())
+                ))
                 .Header("[blue]Test Summary[/]")
                 .Border(BoxBorder.Rounded)
                 .BorderColor(Color.Blue);
@@ -575,7 +575,7 @@ namespace SimulationTest
                     $"[bold]Min:[/] {minTestDuration.TotalMilliseconds:F2} ms\n" +
                     $"[bold]Max:[/] {maxTestDuration.TotalMilliseconds:F2} ms\n" +
                     $"[bold]Tests/Second:[/] {(results.Elapsed.TotalSeconds > 0 ? totalTests / results.Elapsed.TotalSeconds : 0):F2}"
-                ).ToString())
+                ))
                 .Header("[blue]Performance Metrics[/]")
                 .Border(BoxBorder.Rounded)
                 .BorderColor(Color.Blue);
