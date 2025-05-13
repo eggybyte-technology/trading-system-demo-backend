@@ -9,6 +9,9 @@ using MongoDB.Bson;
 using MongoDB.Driver;
 using CommonLib.Api;
 using System.Net.Http.Json;
+using CommonLib.Models.Account;
+using CommonLib.Models.Market;
+using TradingService.Repositories;
 
 namespace TradingService.Services
 {
@@ -619,52 +622,41 @@ namespace TradingService.Services
         {
             try
             {
-                // Create a PriceLevel object from the order
-                var priceLevel = new CommonLib.Models.Market.PriceLevel
-                {
-                    Price = order.Price,
-                    Quantity = order.OriginalQuantity - order.ExecutedQuantity
-                };
+                _logger.LogInformation($"Notifying MarketDataService of new order {order.Id} for {order.Symbol}");
 
-                // Prepare WebSocketDepthData for notification
-                var depthData = new CommonLib.Models.Market.WebSocketDepthData
+                // Create order book update request
+                var updateRequest = new OrderBookUpdateRequest
                 {
                     Symbol = order.Symbol
                 };
 
-                // Add the order to the appropriate side (bids or asks)
+                // Prepare the bids/asks based on order side
                 if (order.Side.ToUpper() == "BUY")
                 {
-                    depthData.Bids = new List<List<decimal>> { new List<decimal> { priceLevel.Price, priceLevel.Quantity } };
-                    depthData.Asks = new List<List<decimal>>();
-                }
-                else // SELL
-                {
-                    depthData.Bids = new List<List<decimal>>();
-                    depthData.Asks = new List<List<decimal>> { new List<decimal> { priceLevel.Price, priceLevel.Quantity } };
-                }
-
-                // Use MarketDataService API client to update the OrderBook
-                var marketDataService = new CommonLib.Api.MarketDataService(_configuration);
-                var response = await marketDataService.UpdateOrderBookAsync(_serviceAuthToken, depthData);
-
-                if (!response.Success)
-                {
-                    _logger.LogWarning($"Failed to update OrderBook for order {order.Id}: {response.Message}");
+                    updateRequest.Bids.Add(new List<decimal> { order.Price, order.OriginalQuantity - order.ExecutedQuantity });
                 }
                 else
                 {
-                    _logger.LogInformation($"Successfully updated OrderBook for order {order.Id}");
+                    updateRequest.Asks.Add(new List<decimal> { order.Price, order.OriginalQuantity - order.ExecutedQuantity });
                 }
 
-                // Publish WebSocket update for real-time clients
-                await _webSocketService.PublishDepthUpdate(order.Symbol, depthData);
-                _logger.LogInformation($"Published OrderBook update for {order.Symbol} via WebSocket");
+                // Use the MarketDataService client
+                var marketDataService = new CommonLib.Api.MarketDataService(_configuration);
+                var response = await marketDataService.UpdateOrderBookAsync(_serviceAuthToken, updateRequest);
+
+                if (!response.Success)
+                {
+                    _logger.LogWarning($"Failed to update order book for {order.Symbol}: {response.Message}");
+                }
+                else
+                {
+                    _logger.LogInformation($"Successfully updated order book for {order.Symbol}");
+                }
             }
             catch (Exception ex)
             {
-                // Log the error but don't fail the order creation
-                _logger.LogError($"Error notifying OrderBook update: {ex.Message}");
+                _logger.LogError($"Error notifying MarketDataService: {ex.Message}");
+                // Continue despite error - this is a non-critical operation
             }
         }
 

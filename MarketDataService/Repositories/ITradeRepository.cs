@@ -3,31 +3,39 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using CommonLib.Models.Trading;
 using MongoDB.Bson;
+using CommonLib.Models.Market;
 
 namespace MarketDataService.Repositories
 {
     /// <summary>
-    /// Repository interface for Trade entity
+    /// Repository interface for trade data
     /// </summary>
     public interface ITradeRepository
     {
         /// <summary>
-        /// Get recent trades for a specific symbol
+        /// Gets trades for a symbol within a time range
         /// </summary>
-        /// <param name="symbolName">Symbol name (e.g., BTC-USDT)</param>
-        /// <param name="limit">Maximum number of trades to return</param>
-        /// <returns>List of recent trades</returns>
-        Task<List<Trade>> GetRecentTradesAsync(string symbolName, int limit = 100);
-
-        /// <summary>
-        /// Get trades for a specific symbol within a time range
-        /// </summary>
-        /// <param name="symbolName">Symbol name (e.g., BTC-USDT)</param>
-        /// <param name="startTime">Optional start time</param>
-        /// <param name="endTime">Optional end time</param>
+        /// <param name="symbol">Symbol name</param>
+        /// <param name="startTime">Range start time</param>
+        /// <param name="endTime">Range end time</param>
         /// <param name="limit">Maximum number of trades to return</param>
         /// <returns>List of trades</returns>
-        Task<List<Trade>> GetTradesInTimeRangeAsync(string symbolName, DateTime? startTime = null, DateTime? endTime = null, int limit = 500);
+        Task<List<Trade>> GetTradesInTimeRangeAsync(string symbol, DateTime startTime, DateTime endTime, int limit = 1000);
+
+        /// <summary>
+        /// Gets recent trades for a symbol
+        /// </summary>
+        /// <param name="symbol">Symbol name</param>
+        /// <param name="limit">Maximum number of trades to return</param>
+        /// <returns>List of trades</returns>
+        Task<List<Trade>> GetRecentTradesAsync(string symbol, int limit = 100);
+
+        /// <summary>
+        /// Saves a trade
+        /// </summary>
+        /// <param name="trade">The trade to save</param>
+        /// <returns>The saved trade</returns>
+        Task<Trade> SaveTradeAsync(Trade trade);
 
         /// <summary>
         /// Get trade by ID

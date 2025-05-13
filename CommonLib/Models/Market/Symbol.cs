@@ -117,6 +117,18 @@ namespace CommonLib.Models.Market
         public decimal MakerFee { get; set; }
 
         /// <summary>
+        /// Creation timestamp
+        /// </summary>
+        [BsonElement("createdAt")]
+        public DateTime CreatedAt { get; set; }
+
+        /// <summary>
+        /// Last update timestamp
+        /// </summary>
+        [BsonElement("updatedAt")]
+        public DateTime UpdatedAt { get; set; }
+
+        /// <summary>
         /// Gets the list of indexes for this model
         /// </summary>
         /// <returns>A list of index definitions with their uniqueness flag</returns>

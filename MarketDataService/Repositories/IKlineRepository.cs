@@ -7,40 +7,50 @@ using MongoDB.Bson;
 namespace MarketDataService.Repositories
 {
     /// <summary>
-    /// Repository interface for Kline entity
+    /// Repository interface for Kline data
     /// </summary>
     public interface IKlineRepository
     {
         /// <summary>
-        /// Get klines for a specific symbol and interval with optional time range
+        /// Gets a kline by symbol, interval, and start time
         /// </summary>
-        /// <param name="symbolName">Symbol name (e.g., BTC-USDT)</param>
-        /// <param name="interval">Kline interval (e.g., 1m, 5m, 1h, 1d)</param>
-        /// <param name="startTime">Optional start time</param>
-        /// <param name="endTime">Optional end time</param>
+        /// <param name="symbol">Symbol name</param>
+        /// <param name="interval">Kline interval</param>
+        /// <param name="startTime">Kline start time</param>
+        /// <returns>The kline or null if not found</returns>
+        Task<Kline?> GetKlineAsync(string symbol, string interval, DateTime startTime);
+
+        /// <summary>
+        /// Gets klines for a symbol and interval within a time range
+        /// </summary>
+        /// <param name="symbol">Symbol name</param>
+        /// <param name="interval">Kline interval</param>
+        /// <param name="startTime">Range start time</param>
+        /// <param name="endTime">Range end time</param>
         /// <param name="limit">Maximum number of klines to return</param>
         /// <returns>List of klines</returns>
-        Task<List<Kline>> GetKlinesAsync(string symbolName, string interval, DateTime? startTime = null, DateTime? endTime = null, int limit = 500);
+        Task<List<Kline>> GetKlinesAsync(string symbol, string interval, DateTime startTime, DateTime endTime, int limit = 500);
 
         /// <summary>
-        /// Get kline by ID
+        /// Inserts or updates a kline
         /// </summary>
-        /// <param name="id">Kline ID</param>
-        /// <returns>Kline if found, null otherwise</returns>
-        Task<Kline> GetKlineByIdAsync(ObjectId id);
+        /// <param name="kline">The kline to upsert</param>
+        /// <returns>The upserted kline</returns>
+        Task<Kline> UpsertKlineAsync(Kline kline);
 
         /// <summary>
-        /// Create a new kline
+        /// Deletes klines for a symbol
         /// </summary>
-        /// <param name="kline">Kline to create</param>
-        /// <returns>Created kline</returns>
-        Task<Kline> CreateKlineAsync(Kline kline);
+        /// <param name="symbol">Symbol name</param>
+        /// <returns>Number of klines deleted</returns>
+        Task<int> DeleteKlinesAsync(string symbol);
 
         /// <summary>
-        /// Update or create klines in batch
+        /// Gets the latest kline for a symbol and interval
         /// </summary>
-        /// <param name="klines">List of klines to upsert</param>
-        /// <returns>Number of klines updated/inserted</returns>
-        Task<int> UpsertKlinesAsync(List<Kline> klines);
+        /// <param name="symbol">Symbol name</param>
+        /// <param name="interval">Kline interval</param>
+        /// <returns>The latest kline or null if not found</returns>
+        Task<Kline?> GetLatestKlineAsync(string symbol, string interval);
     }
 }

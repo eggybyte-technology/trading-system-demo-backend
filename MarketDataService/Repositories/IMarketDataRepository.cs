@@ -11,7 +11,7 @@ namespace MarketDataService.Repositories
     public interface IMarketDataRepository
     {
         /// <summary>
-        /// Get market data for all symbols
+        /// Get all market data
         /// </summary>
         /// <returns>List of all market data</returns>
         Task<List<MarketData>> GetAllMarketDataAsync();
@@ -24,17 +24,36 @@ namespace MarketDataService.Repositories
         Task<MarketData> GetMarketDataBySymbolAsync(string symbolName);
 
         /// <summary>
-        /// Get market data by ID
+        /// Initialize market data for a symbol
         /// </summary>
-        /// <param name="id">Market data ID</param>
-        /// <returns>Market data if found, null otherwise</returns>
-        Task<MarketData> GetMarketDataByIdAsync(ObjectId id);
+        /// <param name="symbolName">Symbol name (e.g., BTC-USDT)</param>
+        /// <param name="baseAsset">Base asset (e.g., BTC)</param>
+        /// <param name="quoteAsset">Quote asset (e.g., USDT)</param>
+        /// <returns>Initialized market data</returns>
+        Task<MarketData> InitMarketDataAsync(string symbolName, string baseAsset, string quoteAsset);
 
         /// <summary>
-        /// Create or update market data
+        /// Update market data with a new trade
+        /// </summary>
+        /// <param name="symbolName">Symbol name</param>
+        /// <param name="price">Trade price</param>
+        /// <param name="quantity">Trade quantity</param>
+        /// <param name="isBuyerMaker">Whether the buyer is the maker</param>
+        /// <returns>Updated market data</returns>
+        Task<MarketData> UpdateMarketDataWithTradeAsync(string symbolName, decimal price, decimal quantity, bool isBuyerMaker);
+
+        /// <summary>
+        /// Update ticker data
         /// </summary>
         /// <param name="marketData">Market data to update</param>
         /// <returns>Updated market data</returns>
-        Task<MarketData> UpsertMarketDataAsync(MarketData marketData);
+        Task<MarketData> UpdateMarketDataAsync(MarketData marketData);
+
+        /// <summary>
+        /// Delete market data for a symbol
+        /// </summary>
+        /// <param name="symbolName">Symbol name</param>
+        /// <returns>True if deleted, false otherwise</returns>
+        Task<bool> DeleteMarketDataAsync(string symbolName);
     }
 }

@@ -75,4 +75,40 @@ namespace CommonLib.Models.Market
         /// </summary>
         public int Limit { get; set; } = 100;
     }
+
+    /// <summary>
+    /// Request model for processing trade data for kline generation
+    /// </summary>
+    public class TradeForKlineRequest
+    {
+        /// <summary>
+        /// Trade ID
+        /// </summary>
+        public string TradeId { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Trading pair symbol
+        /// </summary>
+        public string Symbol { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Trade price
+        /// </summary>
+        public decimal Price { get; set; }
+
+        /// <summary>
+        /// Trade quantity
+        /// </summary>
+        public decimal Quantity { get; set; }
+
+        /// <summary>
+        /// Whether the buyer is the market maker
+        /// </summary>
+        public bool IsBuyerMaker { get; set; }
+
+        /// <summary>
+        /// Trade timestamp (Unix timestamp in milliseconds)
+        /// </summary>
+        public long Timestamp { get; set; }
+    }
 }

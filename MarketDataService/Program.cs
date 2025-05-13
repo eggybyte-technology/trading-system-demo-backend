@@ -46,14 +46,14 @@ builder.Services.AddSingleton<MongoDbConnectionFactory>();
 builder.Services.AddSingleton<DatabaseInitializationService>();
 
 // Register Market-specific repositories
-builder.Services.AddScoped<ISymbolRepository, SymbolRepository>();
-builder.Services.AddScoped<IMarketDataRepository, MarketDataRepository>();
 builder.Services.AddScoped<IOrderBookRepository, OrderBookRepository>();
+builder.Services.AddScoped<ISymbolRepository, SymbolRepository>();
 builder.Services.AddScoped<IKlineRepository, KlineRepository>();
 builder.Services.AddScoped<ITradeRepository, TradeRepository>();
 
 // Register Market-specific services
 builder.Services.AddScoped<IMarketService, MarketService>();
+builder.Services.AddScoped<IKlineService, KlineService>();
 
 // Register HttpClientService for inter-service communication
 builder.Services.AddHttpClient();

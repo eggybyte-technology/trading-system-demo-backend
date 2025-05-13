@@ -15,6 +15,8 @@ namespace CommonLib.Api
         {
         }
 
+        #region Market Data Queries
+
         public async Task<SymbolsResponse> GetSymbolsAsync()
         {
             return await GetAsync<SymbolsResponse>("/market/symbols");
@@ -41,6 +43,37 @@ namespace CommonLib.Api
             var queryString = BuildQueryString(queryParams);
             return await GetAsync<MarketDepthResponse>($"/market/depth?{queryString}");
         }
+
+        public async Task<KlineResponse> GetKlinesAsync(KlineRequest request)
+        {
+            var queryParams = new Dictionary<string, string?>
+            {
+                ["symbol"] = request.Symbol,
+                ["interval"] = request.Interval,
+                ["limit"] = request.Limit.ToString(),
+                ["startTime"] = request.StartTime?.ToString(),
+                ["endTime"] = request.EndTime?.ToString()
+            };
+
+            var queryString = BuildQueryString(queryParams);
+            return await GetAsync<KlineResponse>($"/market/klines?{queryString}");
+        }
+
+        public async Task<TradesResponse> GetRecentTradesAsync(RecentTradesRequest request)
+        {
+            var queryParams = new Dictionary<string, string?>
+            {
+                ["symbol"] = request.Symbol,
+                ["limit"] = request.Limit.ToString()
+            };
+
+            var queryString = BuildQueryString(queryParams);
+            return await GetAsync<TradesResponse>($"/market/trades?{queryString}");
+        }
+
+        #endregion
+
+        #region OrderBook Updates
 
         /// <summary>
         /// Updates the order book with new price levels
@@ -71,31 +104,48 @@ namespace CommonLib.Api
             return await UpdateOrderBookAsync(token, request);
         }
 
-        public async Task<KlineResponse> GetKlinesAsync(KlineRequest request)
-        {
-            var queryParams = new Dictionary<string, string?>
-            {
-                ["symbol"] = request.Symbol,
-                ["interval"] = request.Interval,
-                ["limit"] = request.Limit.ToString(),
-                ["startTime"] = request.StartTime?.ToString(),
-                ["endTime"] = request.EndTime?.ToString()
-            };
+        #endregion
 
-            var queryString = BuildQueryString(queryParams);
-            return await GetAsync<KlineResponse>($"/market/klines?{queryString}");
+        #region Symbol Management
+
+        /// <summary>
+        /// Creates a new trading symbol
+        /// </summary>
+        /// <param name="token">Authentication token for admin operations</param>
+        /// <param name="request">Symbol creation request</param>
+        /// <returns>Symbol creation response</returns>
+        public async Task<SymbolResponse> CreateSymbolAsync(string token, SymbolCreateRequest request)
+        {
+            return await PostAsync<SymbolResponse, SymbolCreateRequest>("/market/symbols", request, token);
         }
 
-        public async Task<TradesResponse> GetRecentTradesAsync(RecentTradesRequest request)
+        /// <summary>
+        /// Updates an existing trading symbol
+        /// </summary>
+        /// <param name="token">Authentication token for admin operations</param>
+        /// <param name="symbolName">Symbol name to update</param>
+        /// <param name="request">Symbol update request</param>
+        /// <returns>Symbol update response</returns>
+        public async Task<SymbolResponse> UpdateSymbolAsync(string token, string symbolName, SymbolUpdateRequest request)
         {
-            var queryParams = new Dictionary<string, string?>
-            {
-                ["symbol"] = request.Symbol,
-                ["limit"] = request.Limit.ToString()
-            };
-
-            var queryString = BuildQueryString(queryParams);
-            return await GetAsync<TradesResponse>($"/market/trades?{queryString}");
+            return await PutAsync<SymbolResponse, SymbolUpdateRequest>($"/market/symbols/{Uri.EscapeDataString(symbolName)}", request, token);
         }
+
+        #endregion
+
+        #region Kline Processing
+
+        /// <summary>
+        /// Processes a trade for kline generation
+        /// </summary>
+        /// <param name="token">Authentication token for service-to-service communication</param>
+        /// <param name="request">Trade data for kline processing</param>
+        /// <returns>Processing result</returns>
+        public async Task<ApiResponse<bool>> ProcessTradeForKlineAsync(string token, TradeForKlineRequest request)
+        {
+            return await PostAsync<ApiResponse<bool>, TradeForKlineRequest>("/market/process-trade", request, token);
+        }
+
+        #endregion
     }
 }

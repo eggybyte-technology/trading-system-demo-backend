@@ -7,49 +7,63 @@ using CommonLib.Models.Trading;
 namespace MarketDataService.Services
 {
     /// <summary>
-    /// Service interface for market operations
+    /// Service interface for market data operations
     /// </summary>
     public interface IMarketService
     {
         /// <summary>
-        /// Get all available trading symbols
+        /// Gets all symbols
         /// </summary>
         /// <returns>List of symbols</returns>
         Task<List<Symbol>> GetSymbolsAsync();
 
         /// <summary>
-        /// Get ticker information for a specific symbol
+        /// Gets ticker data for a symbol
         /// </summary>
         /// <param name="symbolName">Symbol name</param>
-        /// <returns>Ticker information</returns>
+        /// <returns>Market data for the symbol</returns>
         Task<MarketData> GetTickerAsync(string symbolName);
 
         /// <summary>
-        /// Get market summary for all symbols
+        /// Gets market summary for all symbols
         /// </summary>
-        /// <returns>Market summary</returns>
+        /// <returns>List of market data for all symbols</returns>
         Task<List<MarketData>> GetMarketSummaryAsync();
 
         /// <summary>
-        /// Get order book depth for a symbol
+        /// Gets market depth (order book) for a symbol
         /// </summary>
-        /// <param name="request">Market depth request parameters</param>
-        /// <returns>Order book depth</returns>
-        Task<OrderBook> GetMarketDepthAsync(MarketDepthRequest request);
+        /// <param name="request">Market depth request</param>
+        /// <returns>Order book for the symbol</returns>
+        Task<OrderBook> GetOrderBookDepthAsync(MarketDepthRequest request);
 
         /// <summary>
-        /// Get kline/candlestick data for a symbol
+        /// Gets klines (candlestick data) for a symbol
         /// </summary>
-        /// <param name="request">Kline request parameters</param>
-        /// <returns>Kline data</returns>
+        /// <param name="request">Kline request</param>
+        /// <returns>List of klines</returns>
         Task<List<Kline>> GetKlinesAsync(KlineRequest request);
 
         /// <summary>
-        /// Get recent trades for a symbol
+        /// Gets recent trades for a symbol
         /// </summary>
-        /// <param name="symbolName">Symbol name</param>
-        /// <param name="limit">Maximum number of trades to return</param>
-        /// <returns>List of trades</returns>
-        Task<List<Trade>> GetRecentTradesAsync(string symbolName, int limit = 100);
+        /// <param name="request">Recent trades request</param>
+        /// <returns>List of recent trades</returns>
+        Task<List<Trade>> GetRecentTradesAsync(RecentTradesRequest request);
+
+        /// <summary>
+        /// Creates a new trading symbol
+        /// </summary>
+        /// <param name="request">Symbol creation request</param>
+        /// <returns>Created symbol</returns>
+        Task<Symbol> CreateSymbolAsync(SymbolCreateRequest request);
+
+        /// <summary>
+        /// Updates an existing trading symbol
+        /// </summary>
+        /// <param name="symbolName">Symbol name to update</param>
+        /// <param name="request">Symbol update request</param>
+        /// <returns>Updated symbol</returns>
+        Task<Symbol> UpdateSymbolAsync(string symbolName, SymbolUpdateRequest request);
     }
 }
