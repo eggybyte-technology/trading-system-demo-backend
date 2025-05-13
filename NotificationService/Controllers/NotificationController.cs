@@ -1,11 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
+using CommonLib.Models;
 using CommonLib.Models.Notification;
 using CommonLib.Services;
+using NotificationService.Services;
 using MongoDB.Bson;
 using MongoDB.Driver;
 
@@ -19,68 +22,104 @@ namespace NotificationService.Controllers
     [Authorize]
     public class NotificationController : ControllerBase
     {
-        private readonly MongoDbConnectionFactory _dbFactory;
+        private readonly INotificationService _notificationService;
         private readonly ILoggerService _logger;
+        private readonly IApiLoggingService _apiLogger;
+        private readonly JsonSerializerOptions _jsonOptions = new JsonSerializerOptions { WriteIndented = true };
 
         /// <summary>
         /// Initializes a new instance of the NotificationController
         /// </summary>
-        /// <param name="dbFactory">MongoDB connection factory</param>
+        /// <param name="notificationService">Notification service</param>
         /// <param name="logger">Logger service</param>
+        /// <param name="apiLogger">API logger service</param>
         public NotificationController(
-            MongoDbConnectionFactory dbFactory,
-            ILoggerService logger)
+            INotificationService notificationService,
+            ILoggerService logger,
+            IApiLoggingService apiLogger)
         {
-            _dbFactory = dbFactory;
-            _logger = logger;
+            _notificationService = notificationService ?? throw new ArgumentNullException(nameof(notificationService));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _apiLogger = apiLogger ?? throw new ArgumentNullException(nameof(apiLogger));
         }
 
         /// <summary>
         /// Gets all notifications for the current user
         /// </summary>
-        /// <param name="page">Page number (default: 1)</param>
-        /// <param name="pageSize">Number of items per page (default: 20)</param>
-        /// <param name="includeRead">Whether to include read notifications (default: false)</param>
+        /// <param name="request">Notification query parameters</param>
         /// <returns>List of notifications</returns>
         [HttpGet]
-        [ProducesResponseType(typeof(List<Notification>), 200)]
-        public async Task<IActionResult> GetNotifications(
-            [FromQuery] int page = 1,
-            [FromQuery] int pageSize = 20,
-            [FromQuery] bool includeRead = false)
+        [ProducesResponseType(typeof(List<NotificationResponse>), 200)]
+        public async Task<IActionResult> GetNotifications([FromQuery] NotificationQueryRequest request)
         {
+            await _apiLogger.LogApiRequest(HttpContext);
+            var startTime = DateTime.UtcNow;
+
             try
             {
                 var userId = User.Identity?.Name;
                 if (string.IsNullOrEmpty(userId))
                 {
-                    return Unauthorized();
+                    var errorResponse = new { message = "Unauthorized", success = false };
+                    var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                    await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                    return Unauthorized(errorResponse);
                 }
 
-                var notificationCollection = _dbFactory.GetCollection<Notification>();
-                var filter = Builders<Notification>.Filter.Eq(n => n.UserId, ObjectId.Parse(userId));
+                // Convert startTime and endTime to DateTime
+                DateTime? startTimeDate = request.StartTime.HasValue
+                    ? DateTimeOffset.FromUnixTimeMilliseconds(request.StartTime.Value).UtcDateTime
+                    : null;
 
-                if (!includeRead)
+                DateTime? endTimeDate = request.EndTime.HasValue
+                    ? DateTimeOffset.FromUnixTimeMilliseconds(request.EndTime.Value).UtcDateTime
+                    : null;
+
+                // Get notifications using service
+                var paginatedNotifications = await _notificationService.GetNotificationsAsync(
+                    ObjectId.Parse(userId),
+                    request.IncludeRead,
+                    request.Type,
+                    startTimeDate,
+                    endTimeDate,
+                    request.Page,
+                    request.PageSize);
+
+                // Convert to response models
+                var responseList = paginatedNotifications.Items.Select(n => new NotificationResponse
                 {
-                    filter = Builders<Notification>.Filter.And(
-                        filter,
-                        Builders<Notification>.Filter.Eq(n => n.IsRead, false)
-                    );
-                }
+                    Id = n.Id.ToString(),
+                    UserId = n.UserId.ToString(),
+                    Type = n.Type,
+                    Title = n.Title,
+                    Content = n.Message,
+                    IsRead = n.IsRead,
+                    Timestamp = new DateTimeOffset(n.CreatedAt).ToUnixTimeMilliseconds(),
+                    Data = new Dictionary<string, string> { { "relatedId", n.RelatedId }, { "data", n.Data } }
+                }).ToList();
 
-                var notifications = await notificationCollection
-                    .Find(filter)
-                    .Sort(Builders<Notification>.Sort.Descending(n => n.CreatedAt))
-                    .Skip((page - 1) * pageSize)
-                    .Limit(pageSize)
-                    .ToListAsync();
+                // Create paginated response
+                // Note: TotalPages, HasNextPage, and HasPreviousPage are computed properties
+                var paginatedResponse = new PaginatedResult<NotificationResponse>
+                {
+                    Items = responseList,
+                    Page = paginatedNotifications.Page,
+                    PageSize = paginatedNotifications.PageSize,
+                    TotalItems = paginatedNotifications.TotalItems
+                };
 
-                return Ok(notifications);
+                var response = new { data = paginatedResponse, success = true };
+                var responseJson = JsonSerializer.Serialize(response, _jsonOptions);
+                await _apiLogger.LogApiResponse(HttpContext, responseJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                return Ok(response);
             }
             catch (Exception ex)
             {
                 _logger.LogError($"Error retrieving notifications: {ex.Message}");
-                return StatusCode(500, "An error occurred while retrieving notifications");
+                var errorResponse = new { message = "An error occurred while retrieving notifications", success = false };
+                var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                return StatusCode(500, errorResponse);
             }
         }
 
@@ -90,44 +129,64 @@ namespace NotificationService.Controllers
         /// <param name="id">Notification ID</param>
         /// <returns>The updated notification</returns>
         [HttpPut("{id}/read")]
-        [ProducesResponseType(typeof(Notification), 200)]
+        [ProducesResponseType(typeof(NotificationResponse), 200)]
         public async Task<IActionResult> MarkAsRead(string id)
         {
+            await _apiLogger.LogApiRequest(HttpContext);
+            var startTime = DateTime.UtcNow;
+
             try
             {
                 var userId = User.Identity?.Name;
                 if (string.IsNullOrEmpty(userId))
                 {
-                    return Unauthorized();
+                    var errorResponse = new { message = "Unauthorized", success = false };
+                    var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                    await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                    return Unauthorized(errorResponse);
                 }
 
-                var notificationCollection = _dbFactory.GetCollection<Notification>();
-                var filter = Builders<Notification>.Filter.And(
-                    Builders<Notification>.Filter.Eq(n => n.Id, ObjectId.Parse(id)),
-                    Builders<Notification>.Filter.Eq(n => n.UserId, ObjectId.Parse(userId))
-                );
+                // Mark notification as read using service
+                var notification = await _notificationService.MarkNotificationAsReadAsync(
+                    ObjectId.Parse(id),
+                    ObjectId.Parse(userId));
 
-                var update = Builders<Notification>.Update
-                    .Set(n => n.IsRead, true)
-                    .Set(n => n.ReadAt, DateTime.UtcNow);
-
-                var result = await notificationCollection.FindOneAndUpdateAsync(
-                    filter,
-                    update,
-                    new FindOneAndUpdateOptions<Notification> { ReturnDocument = ReturnDocument.After }
-                );
-
-                if (result == null)
+                if (notification == null)
                 {
-                    return NotFound("Notification not found or does not belong to the current user");
+                    var errorResponse = new { message = "Notification not found or does not belong to the current user", success = false };
+                    var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                    await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                    return NotFound(errorResponse);
                 }
 
-                return Ok(result);
+                // Convert to response model
+                var response = new
+                {
+                    data = new NotificationResponse
+                    {
+                        Id = notification.Id.ToString(),
+                        UserId = notification.UserId.ToString(),
+                        Type = notification.Type,
+                        Title = notification.Title,
+                        Content = notification.Message,
+                        IsRead = notification.IsRead,
+                        Timestamp = new DateTimeOffset(notification.CreatedAt).ToUnixTimeMilliseconds(),
+                        Data = new Dictionary<string, string> { { "relatedId", notification.RelatedId }, { "data", notification.Data } }
+                    },
+                    success = true
+                };
+
+                var responseJson = JsonSerializer.Serialize(response, _jsonOptions);
+                await _apiLogger.LogApiResponse(HttpContext, responseJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                return Ok(response);
             }
             catch (Exception ex)
             {
                 _logger.LogError($"Error marking notification as read: {ex.Message}");
-                return StatusCode(500, "An error occurred while updating the notification");
+                var errorResponse = new { message = "An error occurred while updating the notification", success = false };
+                var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                return StatusCode(500, errorResponse);
             }
         }
 
@@ -136,123 +195,175 @@ namespace NotificationService.Controllers
         /// </summary>
         /// <returns>User's notification settings</returns>
         [HttpGet("settings")]
-        [ProducesResponseType(typeof(NotificationSettings), 200)]
+        [ProducesResponseType(typeof(NotificationSettingsResponse), 200)]
         public async Task<IActionResult> GetNotificationSettings()
         {
+            await _apiLogger.LogApiRequest(HttpContext);
+            var startTime = DateTime.UtcNow;
+
             try
             {
                 var userId = User.Identity?.Name;
                 if (string.IsNullOrEmpty(userId))
                 {
-                    return Unauthorized();
+                    var errorResponse = new { message = "Unauthorized", success = false };
+                    var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                    await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                    return Unauthorized(errorResponse);
                 }
 
-                var settingsCollection = _dbFactory.GetCollection<NotificationSettings>();
-                var userObjectId = ObjectId.Parse(userId);
+                // Get notification settings using service
+                var settings = await _notificationService.GetNotificationSettingsAsync(ObjectId.Parse(userId));
 
-                var settings = await settingsCollection
-                    .Find(s => s.UserId == userObjectId)
-                    .FirstOrDefaultAsync();
-
-                if (settings == null)
+                // Convert to response model
+                var response = new
                 {
-                    // Create default settings
-                    settings = new NotificationSettings
+                    data = new NotificationSettingsResponse
                     {
-                        UserId = userObjectId,
-                        EmailEnabled = true,
-                        PushEnabled = true,
-                        TypeSettings = new Dictionary<string, NotificationTypeSettings>
-                        {
-                            ["ORDER"] = true,
-                            ["TRADE"] = true,
-                            ["SECURITY"] = true,
-                            ["MARKETING"] = false
-                        }
-                    };
+                        UserId = settings.UserId.ToString(),
+                        EmailNotifications = settings.EmailEnabled,
+                        PushNotifications = settings.PushEnabled,
+                        OrderNotifications = settings.TypeSettings.TryGetValue("ORDER", out var orderSettings) && orderSettings.EmailEnabled,
+                        TradeNotifications = settings.TypeSettings.TryGetValue("TRADE", out var tradeSettings) && tradeSettings.EmailEnabled,
+                        AccountNotifications = settings.TypeSettings.TryGetValue("ACCOUNT", out var accountSettings) && accountSettings.EmailEnabled,
+                        SystemNotifications = settings.TypeSettings.TryGetValue("SECURITY", out var securitySettings) && securitySettings.EmailEnabled
+                    },
+                    success = true
+                };
 
-                    await settingsCollection.InsertOneAsync(settings);
-                }
-
-                return Ok(settings);
+                var responseJson = JsonSerializer.Serialize(response, _jsonOptions);
+                await _apiLogger.LogApiResponse(HttpContext, responseJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                return Ok(response);
             }
             catch (Exception ex)
             {
                 _logger.LogError($"Error retrieving notification settings: {ex.Message}");
-                return StatusCode(500, "An error occurred while retrieving notification settings");
+                var errorResponse = new { message = "An error occurred while retrieving notification settings", success = false };
+                var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                return StatusCode(500, errorResponse);
             }
         }
 
         /// <summary>
         /// Updates notification settings for the current user
         /// </summary>
-        /// <param name="settings">Updated settings</param>
-        /// <returns>Updated notification settings</returns>
+        /// <param name="request">Updated settings</param>
+        /// <returns>The updated settings</returns>
         [HttpPost("settings")]
-        [ProducesResponseType(typeof(NotificationSettings), 200)]
-        public async Task<IActionResult> UpdateNotificationSettings(NotificationSettingsUpdateRequest settings)
+        [ProducesResponseType(typeof(NotificationSettingsResponse), 200)]
+        public async Task<IActionResult> UpdateNotificationSettings(NotificationSettingsUpdateRequest request)
         {
+            await _apiLogger.LogApiRequest(HttpContext);
+            var startTime = DateTime.UtcNow;
+
             try
             {
                 var userId = User.Identity?.Name;
                 if (string.IsNullOrEmpty(userId))
                 {
-                    return Unauthorized();
+                    var errorResponse = new { message = "Unauthorized", success = false };
+                    var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                    await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                    return Unauthorized(errorResponse);
                 }
 
-                var settingsCollection = _dbFactory.GetCollection<NotificationSettings>();
-                var userObjectId = ObjectId.Parse(userId);
+                // Create type settings dictionary
+                var typeSettings = request.TypeSettings ?? new Dictionary<string, bool>();
 
-                var existingSettings = await settingsCollection
-                    .Find(s => s.UserId == userObjectId)
-                    .FirstOrDefaultAsync();
+                // Update notification settings using service
+                var settings = await _notificationService.UpdateNotificationSettingsAsync(
+                    ObjectId.Parse(userId),
+                    request.EmailEnabled,
+                    request.PushEnabled,
+                    typeSettings);
 
-                if (existingSettings == null)
+                // Convert to response model
+                var response = new
                 {
-                    // Create new settings with type conversion from bool to NotificationTypeSettings
-                    var typeSettings = new Dictionary<string, NotificationTypeSettings>();
-                    foreach (var kvp in settings.TypeSettings)
+                    data = new NotificationSettingsResponse
                     {
-                        typeSettings[kvp.Key] = kvp.Value; // Implicit conversion
-                    }
+                        UserId = settings.UserId.ToString(),
+                        EmailNotifications = settings.EmailEnabled,
+                        PushNotifications = settings.PushEnabled,
+                        OrderNotifications = settings.TypeSettings.TryGetValue("ORDER", out var orderSettings) && orderSettings.EmailEnabled,
+                        TradeNotifications = settings.TypeSettings.TryGetValue("TRADE", out var tradeSettings) && tradeSettings.EmailEnabled,
+                        AccountNotifications = settings.TypeSettings.TryGetValue("ACCOUNT", out var accountSettings) && accountSettings.EmailEnabled,
+                        SystemNotifications = settings.TypeSettings.TryGetValue("SECURITY", out var securitySettings) && securitySettings.EmailEnabled
+                    },
+                    success = true
+                };
 
-                    // Create new settings
-                    existingSettings = new NotificationSettings
-                    {
-                        UserId = userObjectId,
-                        EmailEnabled = settings.EmailEnabled,
-                        PushEnabled = settings.PushEnabled,
-                        TypeSettings = typeSettings
-                    };
-
-                    await settingsCollection.InsertOneAsync(existingSettings);
-                }
-                else
-                {
-                    // Update existing settings with type conversion from bool to NotificationTypeSettings
-                    var typeSettings = new Dictionary<string, NotificationTypeSettings>();
-                    foreach (var kvp in settings.TypeSettings)
-                    {
-                        typeSettings[kvp.Key] = kvp.Value; // Implicit conversion
-                    }
-
-                    // Update existing settings
-                    existingSettings.EmailEnabled = settings.EmailEnabled;
-                    existingSettings.PushEnabled = settings.PushEnabled;
-                    existingSettings.TypeSettings = typeSettings;
-
-                    await settingsCollection.ReplaceOneAsync(
-                        s => s.Id == existingSettings.Id,
-                        existingSettings
-                    );
-                }
-
-                return Ok(existingSettings);
+                var responseJson = JsonSerializer.Serialize(response, _jsonOptions);
+                await _apiLogger.LogApiResponse(HttpContext, responseJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                return Ok(response);
             }
             catch (Exception ex)
             {
                 _logger.LogError($"Error updating notification settings: {ex.Message}");
-                return StatusCode(500, "An error occurred while updating notification settings");
+                var errorResponse = new { message = "An error occurred while updating notification settings", success = false };
+                var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                return StatusCode(500, errorResponse);
+            }
+        }
+
+        /// <summary>
+        /// Deletes notifications
+        /// </summary>
+        /// <param name="ids">Optional notification IDs to delete</param>
+        /// <returns>Number of notifications deleted</returns>
+        [HttpDelete]
+        [ProducesResponseType(typeof(DeleteNotificationsResponse), 200)]
+        public async Task<IActionResult> DeleteNotifications([FromQuery] string? ids)
+        {
+            await _apiLogger.LogApiRequest(HttpContext);
+            var startTime = DateTime.UtcNow;
+
+            try
+            {
+                var userId = User.Identity?.Name;
+                if (string.IsNullOrEmpty(userId))
+                {
+                    var errorResponse = new { message = "Unauthorized", success = false };
+                    var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                    await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                    return Unauthorized(errorResponse);
+                }
+
+                // Parse notification IDs if provided
+                IEnumerable<ObjectId>? notificationIds = null;
+                if (!string.IsNullOrEmpty(ids))
+                {
+                    notificationIds = ids.Split(',')
+                        .Where(id => !string.IsNullOrEmpty(id) && ObjectId.TryParse(id.Trim(), out _))
+                        .Select(id => ObjectId.Parse(id.Trim()));
+                }
+
+                // Delete notifications using service
+                var count = await _notificationService.DeleteNotificationsAsync(ObjectId.Parse(userId), notificationIds);
+
+                // Create response
+                var response = new
+                {
+                    data = new DeleteNotificationsResponse
+                    {
+                        DeletedCount = count
+                    },
+                    success = true
+                };
+
+                var responseJson = JsonSerializer.Serialize(response, _jsonOptions);
+                await _apiLogger.LogApiResponse(HttpContext, responseJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                return Ok(response);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error deleting notifications: {ex.Message}");
+                var errorResponse = new { message = "An error occurred while deleting notifications", success = false };
+                var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                return StatusCode(500, errorResponse);
             }
         }
     }

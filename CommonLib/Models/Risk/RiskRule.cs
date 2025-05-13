@@ -45,10 +45,34 @@ namespace CommonLib.Models.Risk
         public string Parameters { get; set; } = "{}";
 
         /// <summary>
+        /// Maximum position size
+        /// </summary>
+        [BsonElement("maxPositionSize")]
+        public decimal? MaxPositionSize { get; set; }
+
+        /// <summary>
+        /// Maximum order size
+        /// </summary>
+        [BsonElement("maxOrderSize")]
+        public decimal? MaxOrderSize { get; set; }
+
+        /// <summary>
+        /// Maximum orders per day
+        /// </summary>
+        [BsonElement("maxOrdersPerDay")]
+        public int? MaxOrdersPerDay { get; set; }
+
+        /// <summary>
         /// Whether the rule is active
         /// </summary>
         [BsonElement("isActive")]
         public bool IsActive { get; set; } = true;
+
+        /// <summary>
+        /// Whether the rule is enabled
+        /// </summary>
+        [BsonElement("isEnabled")]
+        public bool IsEnabled { get; set; } = true;
 
         /// <summary>
         /// Creation time

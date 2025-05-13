@@ -18,6 +18,11 @@ namespace CommonLib.Services
         private MongoClient _client;
 
         /// <summary>
+        /// Gets the MongoDB client instance
+        /// </summary>
+        public MongoClient Client => GetClient();
+
+        /// <summary>
         /// Initializes a new MongoDB connection factory
         /// </summary>
         /// <param name="configuration">Application configuration</param>

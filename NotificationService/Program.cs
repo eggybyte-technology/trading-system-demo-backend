@@ -8,6 +8,9 @@ using CommonLib.Services;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using System.IdentityModel.Tokens.Jwt;
+using NotificationService.Services;
+using CommonLib.Models.Notification;
+using CommonLib.Api;
 
 // Create and configure the WebApplication builder
 var builder = WebApplication.CreateBuilder(args);
@@ -42,10 +45,14 @@ builder.Services.AddSingleton<DatabaseInitializationService>();
 
 // Register Notification-specific services
 builder.Services.AddSingleton<WebSocketService>();
+builder.Services.AddScoped<INotificationService, NotificationService.Services.NotificationService>();
 
 // Register HttpClientService for inter-service communication
 builder.Services.AddHttpClient();
 builder.Services.AddScoped<IHttpClientService, HttpClientService>();
+
+// Register CommonLib/Api services for inter-service communication
+builder.Services.AddTradingSystemServices();
 
 // ======================================================
 // JWT AUTHENTICATION CONFIGURATION

@@ -4,6 +4,17 @@ using System.Collections.Generic;
 namespace CommonLib.Models.Market
 {
     /// <summary>
+    /// Response model containing all symbols
+    /// </summary>
+    public class SymbolsResponse
+    {
+        /// <summary>
+        /// List of available symbols
+        /// </summary>
+        public List<SymbolInfo> Symbols { get; set; } = new List<SymbolInfo>();
+    }
+
+    /// <summary>
     /// Symbol information
     /// </summary>
     public class SymbolInfo
@@ -24,34 +35,33 @@ namespace CommonLib.Models.Market
         public string QuoteAsset { get; set; } = string.Empty;
 
         /// <summary>
-        /// Base asset precision
+        /// Minimum order size
         /// </summary>
-        public int BaseAssetPrecision { get; set; }
+        public decimal MinOrderSize { get; set; }
 
         /// <summary>
-        /// Quote precision
+        /// Maximum order size
         /// </summary>
-        public int QuotePrecision { get; set; }
+        public decimal MaxOrderSize { get; set; }
 
         /// <summary>
-        /// Whether the symbol is currently active for trading
+        /// Price precision
+        /// </summary>
+        public int PricePrecision { get; set; }
+
+        /// <summary>
+        /// Quantity precision
+        /// </summary>
+        public int QuantityPrecision { get; set; }
+
+        /// <summary>
+        /// Is active
         /// </summary>
         public bool IsActive { get; set; }
     }
 
     /// <summary>
-    /// Symbols response
-    /// </summary>
-    public class SymbolsResponse
-    {
-        /// <summary>
-        /// List of symbol information
-        /// </summary>
-        public List<SymbolInfo> Symbols { get; set; } = new List<SymbolInfo>();
-    }
-
-    /// <summary>
-    /// Ticker information
+    /// Response model for ticker data
     /// </summary>
     public class TickerResponse
     {
@@ -61,9 +71,9 @@ namespace CommonLib.Models.Market
         public string Symbol { get; set; } = string.Empty;
 
         /// <summary>
-        /// Current price
+        /// Last price
         /// </summary>
-        public decimal Price { get; set; }
+        public decimal LastPrice { get; set; }
 
         /// <summary>
         /// Price change
@@ -71,44 +81,64 @@ namespace CommonLib.Models.Market
         public decimal PriceChange { get; set; }
 
         /// <summary>
-        /// Price change percent
+        /// Price change percentage
         /// </summary>
         public decimal PriceChangePercent { get; set; }
 
         /// <summary>
-        /// 24h high
+        /// High price
         /// </summary>
-        public decimal High24h { get; set; }
+        public decimal HighPrice { get; set; }
 
         /// <summary>
-        /// 24h low
+        /// Low price
         /// </summary>
-        public decimal Low24h { get; set; }
+        public decimal LowPrice { get; set; }
 
         /// <summary>
-        /// 24h volume
+        /// Volume
         /// </summary>
-        public decimal Volume24h { get; set; }
+        public decimal Volume { get; set; }
 
         /// <summary>
-        /// Timestamp
+        /// Quote volume
+        /// </summary>
+        public decimal QuoteVolume { get; set; }
+
+        /// <summary>
+        /// Timestamp in milliseconds
         /// </summary>
         public long Timestamp { get; set; }
     }
 
     /// <summary>
-    /// Market summary response
+    /// Response model for market summary
     /// </summary>
     public class MarketSummaryResponse
     {
         /// <summary>
-        /// List of market ticker information
+        /// List of tickers
         /// </summary>
-        public List<TickerResponse> Markets { get; set; } = new List<TickerResponse>();
+        public List<TickerResponse> Tickers { get; set; } = new List<TickerResponse>();
+
+        /// <summary>
+        /// Total trading volume
+        /// </summary>
+        public decimal TotalVolume { get; set; }
+
+        /// <summary>
+        /// Total trading quote volume
+        /// </summary>
+        public decimal TotalQuoteVolume { get; set; }
+
+        /// <summary>
+        /// Timestamp in milliseconds
+        /// </summary>
+        public long Timestamp { get; set; }
     }
 
     /// <summary>
-    /// Market depth response
+    /// Response model for market depth
     /// </summary>
     public class MarketDepthResponse
     {
@@ -118,9 +148,9 @@ namespace CommonLib.Models.Market
         public string Symbol { get; set; } = string.Empty;
 
         /// <summary>
-        /// Timestamp
+        /// Last update ID
         /// </summary>
-        public long Timestamp { get; set; }
+        public long LastUpdateId { get; set; }
 
         /// <summary>
         /// Bids (price, quantity)
@@ -131,10 +161,15 @@ namespace CommonLib.Models.Market
         /// Asks (price, quantity)
         /// </summary>
         public List<decimal[]> Asks { get; set; } = new List<decimal[]>();
+
+        /// <summary>
+        /// Timestamp in milliseconds
+        /// </summary>
+        public long Timestamp { get; set; }
     }
 
     /// <summary>
-    /// Trade information
+    /// Response model for a recent trade
     /// </summary>
     public class TradeResponse
     {
@@ -144,28 +179,81 @@ namespace CommonLib.Models.Market
         public string Id { get; set; } = string.Empty;
 
         /// <summary>
+        /// Price
+        /// </summary>
+        public decimal Price { get; set; }
+
+        /// <summary>
+        /// Quantity
+        /// </summary>
+        public decimal Quantity { get; set; }
+
+        /// <summary>
+        /// Quote quantity (price * quantity)
+        /// </summary>
+        public decimal QuoteQuantity { get; set; }
+
+        /// <summary>
+        /// Trade time in milliseconds
+        /// </summary>
+        public long Time { get; set; }
+
+        /// <summary>
+        /// Is buyer maker
+        /// </summary>
+        public bool IsBuyerMaker { get; set; }
+
+        /// <summary>
+        /// Is best match
+        /// </summary>
+        public bool IsBestMatch { get; set; }
+    }
+
+    /// <summary>
+    /// Response model for kline/candlestick data
+    /// </summary>
+    public class KlineResponse
+    {
+        /// <summary>
         /// Symbol name
         /// </summary>
         public string Symbol { get; set; } = string.Empty;
 
         /// <summary>
-        /// Trade price
+        /// Interval
         /// </summary>
-        public decimal Price { get; set; }
+        public string Interval { get; set; } = string.Empty;
 
         /// <summary>
-        /// Trade quantity
+        /// Kline data
+        /// [0] Open time
+        /// [1] Open price
+        /// [2] High price
+        /// [3] Low price
+        /// [4] Close price
+        /// [5] Volume
+        /// [6] Close time
+        /// [7] Quote asset volume
+        /// [8] Number of trades
+        /// [9] Taker buy base asset volume
+        /// [10] Taker buy quote asset volume
         /// </summary>
-        public decimal Quantity { get; set; }
+        public List<decimal[]> Klines { get; set; } = new List<decimal[]>();
+    }
+
+    /// <summary>
+    /// Response model for multiple trade entries
+    /// </summary>
+    public class TradesResponse
+    {
+        /// <summary>
+        /// Symbol name
+        /// </summary>
+        public string Symbol { get; set; } = string.Empty;
 
         /// <summary>
-        /// Trade timestamp
+        /// List of trades
         /// </summary>
-        public long Time { get; set; }
-
-        /// <summary>
-        /// Whether buyer is maker
-        /// </summary>
-        public bool IsBuyerMaker { get; set; }
+        public List<TradeResponse> Trades { get; set; } = new List<TradeResponse>();
     }
 }

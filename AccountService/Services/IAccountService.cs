@@ -78,6 +78,14 @@ namespace AccountService.Services
         /// <summary>
         /// Gets a withdrawal request by ID
         /// </summary>
+        /// <param name="withdrawalId">The withdrawal ID as ObjectId</param>
+        /// <param name="userId">The user ID as string</param>
+        /// <returns>Withdrawal request or null if not found</returns>
+        Task<Withdrawal?> GetWithdrawalAsync(ObjectId withdrawalId, string userId);
+
+        /// <summary>
+        /// Gets a withdrawal request by ID
+        /// </summary>
         /// <param name="userId">The user ID (as string)</param>
         /// <param name="withdrawalId">The withdrawal ID (as string)</param>
         /// <returns>Withdrawal request or null if not found</returns>
@@ -95,5 +103,26 @@ namespace AccountService.Services
         /// <param name="userId">The user ID (as string)</param>
         /// <returns>User account</returns>
         Task<Account> EnsureUserHasAccountAsync(string userId);
+
+        /// <summary>
+        /// Locks a balance amount for order execution
+        /// </summary>
+        /// <param name="request">Lock balance request</param>
+        /// <returns>Lock balance response</returns>
+        Task<LockBalanceResponse> LockBalanceAsync(LockBalanceRequest request);
+
+        /// <summary>
+        /// Unlocks a previously locked balance
+        /// </summary>
+        /// <param name="request">Unlock balance request</param>
+        /// <returns>Unlock balance response</returns>
+        Task<UnlockBalanceResponse> UnlockBalanceAsync(UnlockBalanceRequest request);
+
+        /// <summary>
+        /// Executes a trade between two users using locked balances
+        /// </summary>
+        /// <param name="request">Execute trade request</param>
+        /// <returns>Execute trade response</returns>
+        Task<ExecuteTradeResponse> ExecuteTradeAsync(ExecuteTradeRequest request);
     }
 }

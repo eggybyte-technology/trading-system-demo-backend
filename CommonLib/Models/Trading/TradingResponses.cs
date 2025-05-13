@@ -30,6 +30,47 @@ namespace CommonLib.Models.Trading
     }
 
     /// <summary>
+    /// Trade history response
+    /// </summary>
+    public class TradeHistoryResponse
+    {
+        /// <summary>
+        /// Total number of trades
+        /// </summary>
+        public int TotalItems { get; set; }
+
+        /// <summary>
+        /// Total number of pages
+        /// </summary>
+        public int TotalPages { get; set; }
+
+        /// <summary>
+        /// Current page
+        /// </summary>
+        public int Page { get; set; }
+
+        /// <summary>
+        /// Page size
+        /// </summary>
+        public int PageSize { get; set; }
+
+        /// <summary>
+        /// Whether there is a next page
+        /// </summary>
+        public bool HasNextPage { get; set; }
+
+        /// <summary>
+        /// Whether there is a previous page
+        /// </summary>
+        public bool HasPreviousPage { get; set; }
+
+        /// <summary>
+        /// Trades on current page
+        /// </summary>
+        public List<TradeResponse> Items { get; set; } = new List<TradeResponse>();
+    }
+
+    /// <summary>
     /// Response model for order details
     /// </summary>
     public class OrderResponse
@@ -185,5 +226,89 @@ namespace CommonLib.Models.Trading
         /// Whether buyer is maker
         /// </summary>
         public bool IsBuyerMaker { get; set; }
+    }
+
+    /// <summary>
+    /// Response model for open orders
+    /// </summary>
+    public class OpenOrdersResponse
+    {
+        /// <summary>
+        /// List of open orders
+        /// </summary>
+        public List<OrderResponse> Orders { get; set; } = new List<OrderResponse>();
+    }
+
+    /// <summary>
+    /// Response model for order cancellation
+    /// </summary>
+    public class CancelOrderResponse
+    {
+        /// <summary>
+        /// Order ID
+        /// </summary>
+        public string OrderId { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Symbol
+        /// </summary>
+        public string Symbol { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Message
+        /// </summary>
+        public string Message { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Success indicator
+        /// </summary>
+        public bool Success { get; set; }
+    }
+
+    /// <summary>
+    /// Response from an order lock operation
+    /// </summary>
+    public class LockOrderResponse
+    {
+        /// <summary>
+        /// Indicates if the lock was successful
+        /// </summary>
+        public bool Success { get; set; }
+
+        /// <summary>
+        /// Unique lock identifier
+        /// </summary>
+        public string LockId { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Order details
+        /// </summary>
+        public OrderResponse Order { get; set; }
+
+        /// <summary>
+        /// Timestamp when the lock expires (in milliseconds)
+        /// </summary>
+        public long ExpirationTimestamp { get; set; }
+
+        /// <summary>
+        /// Error message if the lock failed
+        /// </summary>
+        public string? ErrorMessage { get; set; }
+    }
+
+    /// <summary>
+    /// Response from an order unlock operation
+    /// </summary>
+    public class UnlockOrderResponse
+    {
+        /// <summary>
+        /// Indicates if the unlock was successful
+        /// </summary>
+        public bool Success { get; set; }
+
+        /// <summary>
+        /// Error message if the unlock failed
+        /// </summary>
+        public string? ErrorMessage { get; set; }
     }
 }

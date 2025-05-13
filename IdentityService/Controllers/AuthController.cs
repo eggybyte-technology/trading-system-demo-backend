@@ -1,5 +1,6 @@
 using System;
 using System.Threading.Tasks;
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using CommonLib.Models.Identity;
 using CommonLib.Models.Account;
@@ -13,6 +14,7 @@ using Microsoft.AspNetCore.Authorization;
 using System.Linq;
 using System.Security.Claims;
 using System.Collections.Generic;
+using CommonLib.Api;
 
 namespace IdentityService.Controllers
 {
@@ -29,6 +31,8 @@ namespace IdentityService.Controllers
         private readonly ILoggerService _logger;
         private readonly IApiLoggingService _apiLogger;
         private readonly IHttpClientService _httpClientService;
+        private readonly JsonSerializerOptions _jsonOptions = new JsonSerializerOptions { WriteIndented = true };
+        private readonly CommonLib.Api.AccountService _accountService;
 
         /// <summary>
         /// Initializes a new instance of the AuthController
@@ -39,7 +43,8 @@ namespace IdentityService.Controllers
             JwtService jwtService,
             ILoggerService logger,
             IApiLoggingService apiLogger,
-            IHttpClientService httpClientService)
+            IHttpClientService httpClientService,
+            CommonLib.Api.AccountService accountService)
         {
             _userRepository = userRepository;
             _tokenRepository = tokenRepository;
@@ -47,6 +52,7 @@ namespace IdentityService.Controllers
             _logger = logger;
             _apiLogger = apiLogger;
             _httpClientService = httpClientService;
+            _accountService = accountService;
         }
 
         /// <summary>
@@ -55,33 +61,67 @@ namespace IdentityService.Controllers
         /// <param name="request">Registration information</param>
         /// <returns>New user details and authentication tokens</returns>
         [HttpPost("register")]
+        [ProducesResponseType(typeof(RegisterResponse), 200)]
+        [ProducesResponseType(400)]
+        [ProducesResponseType(500)]
         public async Task<IActionResult> Register([FromBody] RegisterRequest request)
         {
             await _apiLogger.LogApiRequest(HttpContext);
+            var startTime = DateTime.UtcNow;
 
             try
             {
                 // Validate input
                 if (string.IsNullOrWhiteSpace(request.Username))
-                    return BadRequest(new { message = "Username is required" });
+                {
+                    var errorResponse = new { message = "Username is required", success = false };
+                    var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                    await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                    return BadRequest(errorResponse);
+                }
 
                 if (string.IsNullOrWhiteSpace(request.Email))
-                    return BadRequest(new { message = "Email is required" });
+                {
+                    var errorResponse = new { message = "Email is required", success = false };
+                    var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                    await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                    return BadRequest(errorResponse);
+                }
 
                 if (string.IsNullOrWhiteSpace(request.Password) || request.Password.Length < 8)
-                    return BadRequest(new { message = "Password must be at least 8 characters" });
+                {
+                    var errorResponse = new { message = "Password must be at least 8 characters", success = false };
+                    var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                    await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                    return BadRequest(errorResponse);
+                }
 
                 // Validate email format
                 if (!IsValidEmail(request.Email))
-                    return BadRequest(new { message = "Invalid email format" });
+                {
+                    var errorResponse = new { message = "Invalid email format", success = false };
+                    var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                    await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                    return BadRequest(errorResponse);
+                }
 
                 // Check if username already exists
                 if (await _userRepository.IsUsernameTakenAsync(request.Username))
-                    return BadRequest(new { message = "Username already taken" });
+                {
+                    var errorResponse = new { message = "Username already taken", success = false };
+                    var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                    await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                    return BadRequest(errorResponse);
+                }
 
                 // Check if email already exists
                 if (await _userRepository.IsEmailRegisteredAsync(request.Email))
-                    return BadRequest(new { message = "Email already registered" });
+                {
+                    var errorResponse = new { message = "Email already registered", success = false };
+                    var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                    await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                    return BadRequest(errorResponse);
+                }
 
                 // Create user
                 var user = new User
@@ -127,12 +167,8 @@ namespace IdentityService.Controllers
                         roles: new List<string> { "Service" },
                         additionalClaims: serviceSpecificClaims);
 
-                    // Call Account service to create an account
-                    var accountResponse = await _httpClientService.PostAsync<CreateAccountRequest, CreateAccountResponse>(
-                        "AccountService",
-                        "account/create",
-                        accountRequest,
-                        serviceToken);
+                    // Call Account service to create an account using the API client
+                    var accountResponse = await _accountService.CreateAccountAsync(serviceToken, accountRequest);
 
                     if (accountResponse != null)
                     {
@@ -153,7 +189,7 @@ namespace IdentityService.Controllers
                 }
 
                 // Return user info and tokens
-                return Ok(new RegisterResponse
+                var registerResponse = new RegisterResponse
                 {
                     UserId = user.Id.ToString(),
                     Username = user.Username,
@@ -161,12 +197,20 @@ namespace IdentityService.Controllers
                     Token = token,
                     RefreshToken = refreshToken,
                     Expiration = new DateTimeOffset(expiration).ToUnixTimeSeconds()
-                });
+                };
+
+                var response = new { data = registerResponse, success = true };
+                var responseJson = JsonSerializer.Serialize(response, _jsonOptions);
+                await _apiLogger.LogApiResponse(HttpContext, responseJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                return Ok(response);
             }
             catch (Exception ex)
             {
                 _logger.LogError($"Error during registration: {ex.Message}");
-                return StatusCode(500, new { message = "An error occurred during registration" });
+                var errorResponse = new { message = "An error occurred during registration", success = false };
+                var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                return StatusCode(500, errorResponse);
             }
         }
 
@@ -176,49 +220,87 @@ namespace IdentityService.Controllers
         /// <param name="request">Login credentials</param>
         /// <returns>User details and authentication tokens</returns>
         [HttpPost("login")]
+        [ProducesResponseType(typeof(LoginResponse), 200)]
+        [ProducesResponseType(400)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(500)]
         public async Task<IActionResult> Login([FromBody] LoginRequest request)
         {
             await _apiLogger.LogApiRequest(HttpContext);
+            var startTime = DateTime.UtcNow;
 
             try
             {
                 // Validate input
                 if (string.IsNullOrWhiteSpace(request.Email))
-                    return BadRequest(new { message = "Email is required" });
+                {
+                    var errorResponse = new { message = "Email is required", success = false };
+                    var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                    await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                    return BadRequest(errorResponse);
+                }
 
                 if (string.IsNullOrWhiteSpace(request.Password))
-                    return BadRequest(new { message = "Password is required" });
+                {
+                    var errorResponse = new { message = "Password is required", success = false };
+                    var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                    await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                    return BadRequest(errorResponse);
+                }
 
                 // Find user by email
                 var user = await _userRepository.GetByEmailAsync(request.Email);
                 if (user == null)
-                    return Unauthorized(new { message = "Invalid email or password" });
+                {
+                    var errorResponse = new { message = "Invalid email or password", success = false };
+                    var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                    await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                    return Unauthorized(errorResponse);
+                }
 
                 // Verify password
                 if (!BC.Verify(request.Password, user.HashedPassword))
-                    return Unauthorized(new { message = "Invalid email or password" });
+                {
+                    var errorResponse = new { message = "Invalid email or password", success = false };
+                    var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                    await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                    return Unauthorized(errorResponse);
+                }
 
                 // Check if account is active
                 if (!user.IsActive)
-                    return Unauthorized(new { message = "Account is disabled" });
+                {
+                    var errorResponse = new { message = "Account is disabled", success = false };
+                    var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                    await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                    return Unauthorized(errorResponse);
+                }
 
                 // Generate tokens
                 var (token, refreshToken, expiration) = await GenerateTokensForUser(user);
 
                 // Return user info and tokens
-                return Ok(new LoginResponse
+                var loginResponse = new LoginResponse
                 {
                     UserId = user.Id.ToString(),
                     Username = user.Username,
                     Token = token,
                     RefreshToken = refreshToken,
                     Expiration = new DateTimeOffset(expiration).ToUnixTimeSeconds()
-                });
+                };
+
+                var response = new { data = loginResponse, success = true };
+                var responseJson = JsonSerializer.Serialize(response, _jsonOptions);
+                await _apiLogger.LogApiResponse(HttpContext, responseJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                return Ok(response);
             }
             catch (Exception ex)
             {
                 _logger.LogError($"Error during login: {ex.Message}");
-                return StatusCode(500, new { message = "An error occurred during login" });
+                var errorResponse = new { message = "An error occurred during login", success = false };
+                var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                return StatusCode(500, errorResponse);
             }
         }
 
@@ -228,17 +310,24 @@ namespace IdentityService.Controllers
         /// <param name="request">Refresh token</param>
         /// <returns>New authentication tokens</returns>
         [HttpPost("refresh-token")]
+        [ProducesResponseType(typeof(RefreshTokenResponse), 200)]
+        [ProducesResponseType(400)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(500)]
         public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequest request)
         {
             await _apiLogger.LogApiRequest(HttpContext);
+            var startTime = DateTime.UtcNow;
 
             try
             {
                 // Validate the request
                 if (request == null || string.IsNullOrWhiteSpace(request.RefreshToken))
                 {
-                    _logger.LogWarning("Refresh token is required but was not provided");
-                    return BadRequest(new { message = "Refresh token is required" });
+                    var errorResponse = new { message = "Refresh token is required", success = false };
+                    var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                    await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                    return BadRequest(errorResponse);
                 }
 
                 _logger.LogDebug($"Processing refresh token request: {request.RefreshToken.Substring(0, Math.Min(10, request.RefreshToken.Length))}...");
@@ -247,29 +336,37 @@ namespace IdentityService.Controllers
                 var storedToken = await _tokenRepository.GetByTokenValueAsync(request.RefreshToken);
                 if (storedToken == null)
                 {
-                    _logger.LogWarning($"Refresh token not found in database: {request.RefreshToken.Substring(0, Math.Min(10, request.RefreshToken.Length))}...");
-                    return Unauthorized(new { message = "Invalid refresh token" });
+                    var errorResponse = new { message = "Invalid refresh token", success = false };
+                    var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                    await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                    return Unauthorized(errorResponse);
                 }
 
                 // Check if token is valid
                 if (storedToken.ExpiresAt < DateTime.UtcNow)
                 {
-                    _logger.LogWarning($"Refresh token expired: {storedToken.ExpiresAt}");
-                    return Unauthorized(new { message = "Refresh token has expired" });
+                    var errorResponse = new { message = "Refresh token has expired", success = false };
+                    var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                    await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                    return Unauthorized(errorResponse);
                 }
 
                 if (storedToken.IsRevoked)
                 {
-                    _logger.LogWarning($"Refresh token has been revoked: {storedToken.Id}");
-                    return Unauthorized(new { message = "Refresh token has been revoked" });
+                    var errorResponse = new { message = "Refresh token has been revoked", success = false };
+                    var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                    await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                    return Unauthorized(errorResponse);
                 }
 
                 // Get user
                 var user = await _userRepository.GetByIdAsync(storedToken.UserId);
                 if (user == null)
                 {
-                    _logger.LogWarning($"User not found for refresh token. User ID: {storedToken.UserId}");
-                    return Unauthorized(new { message = "User not found" });
+                    var errorResponse = new { message = "User not found", success = false };
+                    var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                    await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                    return Unauthorized(errorResponse);
                 }
 
                 _logger.LogDebug($"User found for refresh token: {user.Username} ({user.Id})");
@@ -283,17 +380,25 @@ namespace IdentityService.Controllers
                 _logger.LogDebug($"New tokens generated: JWT token ({token.Substring(0, Math.Min(10, token.Length))}...), Refresh token ({refreshToken.Substring(0, Math.Min(10, refreshToken.Length))}...)");
 
                 // Return new tokens
-                return Ok(new RefreshTokenResponse
+                var refreshTokenResponse = new RefreshTokenResponse
                 {
                     Token = token,
                     RefreshToken = refreshToken,
                     Expiration = new DateTimeOffset(expiration).ToUnixTimeSeconds()
-                });
+                };
+
+                var response = new { data = refreshTokenResponse, success = true };
+                var responseJson = JsonSerializer.Serialize(response, _jsonOptions);
+                await _apiLogger.LogApiResponse(HttpContext, responseJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                return Ok(response);
             }
             catch (Exception ex)
             {
                 _logger.LogError($"Error refreshing token: {ex.Message}");
-                return StatusCode(500, new { message = "An error occurred while refreshing the token" });
+                var errorResponse = new { message = "An error occurred while refreshing the token", success = false };
+                var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                return StatusCode(500, errorResponse);
             }
         }
 
@@ -303,9 +408,14 @@ namespace IdentityService.Controllers
         /// <returns>User details</returns>
         [HttpGet("user")]
         [Authorize]
+        [ProducesResponseType(typeof(UserResponse), 200)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(404)]
+        [ProducesResponseType(500)]
         public async Task<IActionResult> GetCurrentUser()
         {
             await _apiLogger.LogApiRequest(HttpContext);
+            var startTime = DateTime.UtcNow;
 
             try
             {
@@ -324,14 +434,18 @@ namespace IdentityService.Controllers
 
                 if (string.IsNullOrEmpty(userIdClaim))
                 {
-                    _logger.LogWarning("Invalid authentication token: Cannot find any user ID claim");
-                    return Unauthorized(new { message = "Invalid authentication token" });
+                    var errorResponse = new { message = "Invalid authentication token", success = false };
+                    var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                    await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                    return Unauthorized(errorResponse);
                 }
 
                 if (!ObjectId.TryParse(userIdClaim, out var userId))
                 {
-                    _logger.LogWarning($"Invalid user ID format: {userIdClaim}");
-                    return Unauthorized(new { message = "Invalid authentication token format" });
+                    var errorResponse = new { message = "Invalid authentication token format", success = false };
+                    var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                    await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                    return Unauthorized(errorResponse);
                 }
 
                 _logger.LogDebug($"Found user ID in claims: {userId}");
@@ -340,14 +454,16 @@ namespace IdentityService.Controllers
                 var user = await _userRepository.GetByIdAsync(userId);
                 if (user == null)
                 {
-                    _logger.LogWarning($"User not found for ID: {userId}");
-                    return NotFound(new { message = "User not found" });
+                    var errorResponse = new { message = "User not found", success = false };
+                    var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                    await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                    return NotFound(errorResponse);
                 }
 
                 _logger.LogDebug($"User retrieved from database: {user.Username} ({user.Id})");
 
                 // Return user info (excluding sensitive data)
-                return Ok(new UserResponse
+                var userResponse = new UserResponse
                 {
                     UserId = user.Id.ToString(),
                     Username = user.Username,
@@ -356,12 +472,20 @@ namespace IdentityService.Controllers
                     IsEmailVerified = user.IsEmailVerified,
                     IsTwoFactorEnabled = user.IsTwoFactorEnabled,
                     Roles = user.Roles.Select(r => r.Name).ToList()
-                });
+                };
+
+                var response = new { data = userResponse, success = true };
+                var responseJson = JsonSerializer.Serialize(response, _jsonOptions);
+                await _apiLogger.LogApiResponse(HttpContext, responseJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                return Ok(response);
             }
             catch (Exception ex)
             {
                 _logger.LogError($"Error getting user: {ex.Message}");
-                return StatusCode(500, new { message = "An error occurred while retrieving user information" });
+                var errorResponse = new { message = "An error occurred while retrieving user information", success = false };
+                var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                return StatusCode(500, errorResponse);
             }
         }
 
@@ -372,30 +496,56 @@ namespace IdentityService.Controllers
         /// <returns>Updated user details</returns>
         [HttpPut("user")]
         [Authorize]
+        [ProducesResponseType(typeof(UserResponse), 200)]
+        [ProducesResponseType(400)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(404)]
+        [ProducesResponseType(500)]
         public async Task<IActionResult> UpdateUser([FromBody] UpdateUserRequest request)
         {
             await _apiLogger.LogApiRequest(HttpContext);
+            var startTime = DateTime.UtcNow;
 
             try
             {
                 // Get user ID from claims
                 var userIdClaim = User.Claims.FirstOrDefault(c => c.Type == "sub" || c.Type == "UserId")?.Value;
                 if (string.IsNullOrEmpty(userIdClaim) || !ObjectId.TryParse(userIdClaim, out var userId))
-                    return Unauthorized(new { message = "Invalid authentication token" });
+                {
+                    var errorResponse = new { message = "Invalid authentication token", success = false };
+                    var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                    await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                    return Unauthorized(errorResponse);
+                }
 
                 // Get user
                 var user = await _userRepository.GetByIdAsync(userId);
                 if (user == null)
-                    return NotFound(new { message = "User not found" });
+                {
+                    var errorResponse = new { message = "User not found", success = false };
+                    var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                    await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                    return NotFound(errorResponse);
+                }
 
                 // Check password if provided or if changing email
                 if (!string.IsNullOrEmpty(request.CurrentPassword) || !string.IsNullOrEmpty(request.NewPassword) || !string.IsNullOrEmpty(request.Email))
                 {
                     if (string.IsNullOrEmpty(request.CurrentPassword))
-                        return BadRequest(new { message = "Current password is required" });
+                    {
+                        var errorResponse = new { message = "Current password is required", success = false };
+                        var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                        await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                        return BadRequest(errorResponse);
+                    }
 
                     if (!BC.Verify(request.CurrentPassword, user.HashedPassword))
-                        return BadRequest(new { message = "Current password is incorrect" });
+                    {
+                        var errorResponse = new { message = "Current password is incorrect", success = false };
+                        var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                        await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                        return BadRequest(errorResponse);
+                    }
                 }
 
                 // Update email
@@ -403,11 +553,21 @@ namespace IdentityService.Controllers
                 {
                     // Validate email format
                     if (!IsValidEmail(request.Email))
-                        return BadRequest(new { message = "Invalid email format" });
+                    {
+                        var errorResponse = new { message = "Invalid email format", success = false };
+                        var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                        await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                        return BadRequest(errorResponse);
+                    }
 
                     // Check if email is already registered
                     if (await _userRepository.IsEmailRegisteredAsync(request.Email))
-                        return BadRequest(new { message = "Email already registered" });
+                    {
+                        var errorResponse = new { message = "Email already registered", success = false };
+                        var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                        await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                        return BadRequest(errorResponse);
+                    }
 
                     user.Email = request.Email;
                     user.IsEmailVerified = false; // Require verification for new email
@@ -423,7 +583,12 @@ namespace IdentityService.Controllers
                 if (!string.IsNullOrEmpty(request.NewPassword))
                 {
                     if (request.NewPassword.Length < 8)
-                        return BadRequest(new { message = "Password must be at least 8 characters" });
+                    {
+                        var errorResponse = new { message = "Password must be at least 8 characters", success = false };
+                        var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                        await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                        return BadRequest(errorResponse);
+                    }
 
                     user.HashedPassword = BC.HashPassword(request.NewPassword);
                 }
@@ -435,7 +600,7 @@ namespace IdentityService.Controllers
                 await _userRepository.UpdateAsync(user);
 
                 // Return updated user info
-                return Ok(new UserResponse
+                var userResponse = new UserResponse
                 {
                     UserId = user.Id.ToString(),
                     Username = user.Username,
@@ -444,12 +609,20 @@ namespace IdentityService.Controllers
                     IsEmailVerified = user.IsEmailVerified,
                     IsTwoFactorEnabled = user.IsTwoFactorEnabled,
                     Roles = user.Roles.Select(r => r.Name).ToList()
-                });
+                };
+
+                var response = new { data = userResponse, success = true };
+                var responseJson = JsonSerializer.Serialize(response, _jsonOptions);
+                await _apiLogger.LogApiResponse(HttpContext, responseJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                return Ok(response);
             }
             catch (Exception ex)
             {
                 _logger.LogError($"Error updating user: {ex.Message}");
-                return StatusCode(500, new { message = "An error occurred while updating user information" });
+                var errorResponse = new { message = "An error occurred while updating user information", success = false };
+                var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                return StatusCode(500, errorResponse);
             }
         }
 

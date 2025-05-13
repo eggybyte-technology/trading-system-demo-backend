@@ -88,7 +88,7 @@ namespace CommonLib.Services
                     await _dbFactory.EnsureCollectionExistsAsync(model.Collection, model.Database);
                     createdCollections.Add($"{model.Database}.{model.Collection}");
 
-                    _logger.LogInformation($"Created collection: {model.Database}.{model.Collection}");
+                    // 不再输出每个成功创建的集合日志
                 }
                 catch (Exception ex)
                 {
@@ -165,9 +165,8 @@ namespace CommonLib.Services
 
                             await (Task)createIndexMethod.Invoke(_dbFactory, new[] { indexDefinition, isUnique });
 
-                            // Log index creation
+                            // 将创建成功的索引添加到列表，但不再单独输出日志
                             createdIndexes.Add($"{databaseName}.{collectionName} - {indexDefinition}");
-                            _logger.LogInformation($"Created index on {databaseName}.{collectionName}: {indexDefinition}, Unique: {isUnique}");
                         }
                         catch (Exception ex)
                         {
@@ -181,14 +180,14 @@ namespace CommonLib.Services
                 }
             }
 
-            // Log summary of all created collections and indexes
-            _logger.LogInformation($"Created {createdCollections.Count} collections:");
+            // 总结输出所有成功创建的集合和索引
+            _logger.LogInformation($"Successfully created {createdCollections.Count} collections:");
             foreach (var collection in createdCollections)
             {
                 _logger.LogInformation($"  - {collection}");
             }
 
-            _logger.LogInformation($"Created {createdIndexes.Count} indexes:");
+            _logger.LogInformation($"Successfully created {createdIndexes.Count} indexes:");
             foreach (var index in createdIndexes)
             {
                 _logger.LogInformation($"  - {index}");

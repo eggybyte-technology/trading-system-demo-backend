@@ -12,6 +12,7 @@ using CommonLib.Services;
 using AccountService.Services;
 using CommonLib.Models.Account;
 using System.IdentityModel.Tokens.Jwt;
+using CommonLib.Api;
 
 // Create and configure the WebApplication builder
 var builder = WebApplication.CreateBuilder(args);
@@ -50,6 +51,9 @@ builder.Services.AddScoped<IAccountService, AccountService.Services.AccountServi
 // Register HttpClientService for inter-service communication
 builder.Services.AddHttpClient();
 builder.Services.AddScoped<IHttpClientService, HttpClientService>();
+
+// Register CommonLib/Api services for inter-service communication
+builder.Services.AddTradingSystemServices();
 
 // ======================================================
 // JWT AUTHENTICATION CONFIGURATION

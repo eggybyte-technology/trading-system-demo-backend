@@ -41,9 +41,12 @@ namespace CommonLib.Services
                 // Ensure the request body can be read multiple times
                 context.Request.EnableBuffering();
 
-                // Read the request body if it exists and Content-Length > 0
-                if (context.Request.Body.CanRead && context.Request.ContentLength > 0)
+                // Read the request body if it exists
+                if (context.Request.Body.CanRead)
                 {
+                    // Save original position
+                    var position = context.Request.Body.Position;
+
                     using var reader = new StreamReader(
                         context.Request.Body,
                         encoding: Encoding.UTF8,

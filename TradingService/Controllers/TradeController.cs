@@ -7,6 +7,7 @@ using CommonLib.Services;
 using MongoDB.Bson;
 using TradingService.Services;
 using System.Linq;
+using System.Text.Json;
 
 namespace TradingService.Controllers
 {
@@ -21,6 +22,7 @@ namespace TradingService.Controllers
         private readonly IOrderService _orderService;
         private readonly ILoggerService _logger;
         private readonly IApiLoggingService _apiLogger;
+        private readonly JsonSerializerOptions _jsonOptions = new JsonSerializerOptions { WriteIndented = true };
 
         /// <summary>
         /// Initializes a new instance of the TradeController
@@ -38,55 +40,83 @@ namespace TradingService.Controllers
         /// <summary>
         /// Gets trade history for the current user
         /// </summary>
-        /// <param name="symbol">Optional symbol filter</param>
-        /// <param name="startTime">Optional start time filter (Unix timestamp in seconds)</param>
-        /// <param name="endTime">Optional end time filter (Unix timestamp in seconds)</param>
-        /// <param name="page">Page number</param>
-        /// <param name="pageSize">Page size</param>
+        /// <param name="request">Trade history request parameters</param>
         /// <returns>Trade history with pagination</returns>
         [HttpGet("history")]
-        public async Task<IActionResult> GetTradeHistory(
-            [FromQuery] string? symbol = null,
-            [FromQuery] long? startTime = null,
-            [FromQuery] long? endTime = null,
-            [FromQuery] int page = 1,
-            [FromQuery] int pageSize = 20)
+        [ProducesResponseType(typeof(TradeHistoryResponse), 200)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(400)]
+        [ProducesResponseType(500)]
+        public async Task<IActionResult> GetTradeHistory([FromQuery] TradeHistoryRequest request)
         {
             await _apiLogger.LogApiRequest(HttpContext);
+            var startTime = DateTime.UtcNow;
 
             try
             {
                 // Get user ID from claims
                 var userIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId")?.Value;
                 if (string.IsNullOrEmpty(userIdClaim) || !ObjectId.TryParse(userIdClaim, out var userId))
-                    return Unauthorized(new { message = "Invalid authentication token" });
+                {
+                    var errorResponse = new { message = "Invalid authentication token", success = false };
+                    var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                    await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                    return Unauthorized(errorResponse);
+                }
 
                 // Validate pagination parameters
-                if (page < 1 || pageSize < 1 || pageSize > 100)
-                    return BadRequest(new { message = "Invalid pagination parameters" });
+                if (request.Page < 1 || request.PageSize < 1 || request.PageSize > 100)
+                {
+                    var errorResponse = new { message = "Invalid pagination parameters", success = false };
+                    var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                    await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                    return BadRequest(errorResponse);
+                }
 
                 // Get trade history
                 var (trades, total) = await _orderService.GetTradeHistoryAsync(
                     userId,
-                    symbol,
-                    startTime,
-                    endTime,
-                    page,
-                    pageSize);
+                    request.Symbol,
+                    request.StartTime,
+                    request.EndTime,
+                    request.Page,
+                    request.PageSize);
+
+                // Convert Trade objects to TradeResponse objects
+                var tradeResponses = trades.Select(t => new TradeResponse
+                {
+                    Id = t.Id.ToString(),
+                    Symbol = t.Symbol,
+                    Price = t.Price,
+                    Quantity = t.Quantity,
+                    Time = new DateTimeOffset(t.CreatedAt).ToUnixTimeMilliseconds(),
+                    IsBuyerMaker = t.IsBuyerMaker
+                }).ToList();
 
                 // Return paginated result
-                return Ok(new
+                var historyResponse = new TradeHistoryResponse
                 {
-                    Total = total,
-                    Page = page,
-                    PageSize = pageSize,
-                    Items = trades
-                });
+                    Page = request.Page,
+                    PageSize = request.PageSize,
+                    TotalItems = total,
+                    TotalPages = (int)Math.Ceiling((double)total / request.PageSize),
+                    HasNextPage = request.Page * request.PageSize < total,
+                    HasPreviousPage = request.Page > 1,
+                    Items = tradeResponses
+                };
+
+                var response = new { data = historyResponse, success = true };
+                var responseJson = JsonSerializer.Serialize(response, _jsonOptions);
+                await _apiLogger.LogApiResponse(HttpContext, responseJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                return Ok(response);
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error getting trade history: {ex.Message}");
-                return StatusCode(500, new { message = "An error occurred while retrieving trade history" });
+                _logger.LogError($"Error getting trade history: {ex.Message}", ex);
+                var errorResponse = new { message = "An error occurred while retrieving trade history", success = false };
+                var errorJson = JsonSerializer.Serialize(errorResponse, _jsonOptions);
+                await _apiLogger.LogApiResponse(HttpContext, errorJson, (long)(DateTime.UtcNow - startTime).TotalMilliseconds);
+                return StatusCode(500, errorResponse);
             }
         }
     }

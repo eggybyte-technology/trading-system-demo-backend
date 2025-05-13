@@ -15,14 +15,14 @@ namespace RiskService.Services
         /// </summary>
         /// <param name="userId">User ID</param>
         /// <returns>Risk profile or null if not found</returns>
-        Task<RiskProfile> GetRiskProfileAsync(ObjectId userId);
+        Task<RiskProfile?> GetRiskProfileAsync(ObjectId userId);
 
         /// <summary>
         /// Get trading limits for a user
         /// </summary>
         /// <param name="userId">User ID</param>
         /// <returns>Trading limits or null if not found</returns>
-        Task<TradingLimits> GetTradingLimitsAsync(ObjectId userId);
+        Task<TradingLimits?> GetTradingLimitsAsync(ObjectId userId);
 
         /// <summary>
         /// Get active alerts for a user
@@ -36,8 +36,9 @@ namespace RiskService.Services
         /// </summary>
         /// <param name="alertId">Alert ID</param>
         /// <param name="userId">User ID</param>
-        /// <returns>True if successful, false otherwise</returns>
-        Task<bool> AcknowledgeAlertAsync(ObjectId alertId, ObjectId userId);
+        /// <param name="comment">Optional acknowledgment comment</param>
+        /// <returns>Updated risk alert or null if not found</returns>
+        Task<RiskAlert?> AcknowledgeAlertAsync(ObjectId alertId, ObjectId userId, string? comment = null);
 
         /// <summary>
         /// Get active risk rules

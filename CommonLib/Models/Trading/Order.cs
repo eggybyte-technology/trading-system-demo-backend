@@ -118,10 +118,28 @@ namespace CommonLib.Models.Trading
         public DateTime? LockedAt { get; set; }
 
         /// <summary>
+        /// Unique ID for the lock
+        /// </summary>
+        [BsonElement("lockId")]
+        public string? LockId { get; set; }
+
+        /// <summary>
+        /// Expiration time for the lock
+        /// </summary>
+        [BsonElement("lockExpiration")]
+        public DateTime? LockExpiration { get; set; }
+
+        /// <summary>
         /// ID of the matching job that locked this order
         /// </summary>
         [BsonElement("lockedByJobId")]
         public ObjectId? LockedByJobId { get; set; }
+
+        /// <summary>
+        /// Cumulative amount in quote asset
+        /// </summary>
+        [BsonElement("cumulativeQuoteQuantity")]
+        public decimal CumulativeQuoteQuantity { get; set; }
 
         /// <summary>
         /// List of trades executed against this order

@@ -146,4 +146,40 @@ namespace CommonLib.Models.Risk
         /// </summary>
         public long UpdatedAt { get; set; }
     }
+
+    /// <summary>
+    /// Trading limits response model
+    /// </summary>
+    public class TradingLimitsResponse
+    {
+        /// <summary>
+        /// User ID
+        /// </summary>
+        public string UserId { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Maximum position value allowed
+        /// </summary>
+        public decimal MaxPositionValue { get; set; }
+
+        /// <summary>
+        /// Maximum daily trading volume allowed
+        /// </summary>
+        public decimal MaxDailyVolume { get; set; }
+
+        /// <summary>
+        /// Maximum single order value allowed
+        /// </summary>
+        public decimal MaxOrderValue { get; set; }
+
+        /// <summary>
+        /// Maximum leverage allowed
+        /// </summary>
+        public decimal MaxLeverage { get; set; }
+
+        /// <summary>
+        /// Last update timestamp in milliseconds
+        /// </summary>
+        public long UpdatedAt { get; set; }
+    }
 }

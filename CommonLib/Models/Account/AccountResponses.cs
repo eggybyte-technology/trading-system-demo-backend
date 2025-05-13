@@ -172,7 +172,27 @@ namespace CommonLib.Models.Account
         /// <summary>
         /// Withdrawal request ID
         /// </summary>
-        public string WithdrawalId { get; set; } = string.Empty;
+        public string Id { get; set; } = string.Empty;
+
+        /// <summary>
+        /// User ID
+        /// </summary>
+        public string UserId { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Asset code
+        /// </summary>
+        public string Asset { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Withdrawal amount
+        /// </summary>
+        public decimal Amount { get; set; }
+
+        /// <summary>
+        /// Destination address
+        /// </summary>
+        public string Address { get; set; } = string.Empty;
 
         /// <summary>
         /// Status of the withdrawal
@@ -180,9 +200,14 @@ namespace CommonLib.Models.Account
         public string Status { get; set; } = string.Empty;
 
         /// <summary>
-        /// Estimated completion time in milliseconds
+        /// Transaction timestamp in milliseconds
         /// </summary>
-        public long EstimatedCompletionTime { get; set; }
+        public long Timestamp { get; set; }
+
+        /// <summary>
+        /// Blockchain transaction ID, if available
+        /// </summary>
+        public string? TransactionId { get; set; }
     }
 
     /// <summary>
@@ -214,5 +239,130 @@ namespace CommonLib.Models.Account
         /// Message describing the result of the account creation
         /// </summary>
         public string Message { get; set; } = string.Empty;
+    }
+
+    /// <summary>
+    /// Response model for available assets
+    /// </summary>
+    public class AssetListResponse
+    {
+        /// <summary>
+        /// List of available assets
+        /// </summary>
+        public List<AssetInfo> Assets { get; set; } = new List<AssetInfo>();
+    }
+
+    /// <summary>
+    /// Asset information
+    /// </summary>
+    public class AssetInfo
+    {
+        /// <summary>
+        /// Asset symbol
+        /// </summary>
+        public string Symbol { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Asset name
+        /// </summary>
+        public string Name { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Whether the asset is active
+        /// </summary>
+        public bool IsActive { get; set; } = true;
+
+        /// <summary>
+        /// Whether deposits are enabled
+        /// </summary>
+        public bool CanDeposit { get; set; } = true;
+
+        /// <summary>
+        /// Whether withdrawals are enabled
+        /// </summary>
+        public bool CanWithdraw { get; set; } = true;
+
+        /// <summary>
+        /// Minimum deposit amount
+        /// </summary>
+        public decimal MinDepositAmount { get; set; }
+
+        /// <summary>
+        /// Minimum withdrawal amount
+        /// </summary>
+        public decimal MinWithdrawalAmount { get; set; }
+
+        /// <summary>
+        /// Fixed withdrawal fee
+        /// </summary>
+        public decimal WithdrawalFeeFixed { get; set; }
+
+        /// <summary>
+        /// Percentage withdrawal fee
+        /// </summary>
+        public decimal WithdrawalFeePercentage { get; set; }
+    }
+
+    /// <summary>
+    /// Response from a balance lock operation
+    /// </summary>
+    public class LockBalanceResponse
+    {
+        /// <summary>
+        /// Indicates if the lock was successful
+        /// </summary>
+        public bool Success { get; set; }
+
+        /// <summary>
+        /// Unique lock identifier
+        /// </summary>
+        public string LockId { get; set; }
+
+        /// <summary>
+        /// Timestamp when the lock expires (in milliseconds)
+        /// </summary>
+        public long ExpirationTimestamp { get; set; }
+
+        /// <summary>
+        /// Error message if the lock failed
+        /// </summary>
+        public string? ErrorMessage { get; set; }
+    }
+
+    /// <summary>
+    /// Response from a balance unlock operation
+    /// </summary>
+    public class UnlockBalanceResponse
+    {
+        /// <summary>
+        /// Indicates if the unlock was successful
+        /// </summary>
+        public bool Success { get; set; }
+
+        /// <summary>
+        /// Error message if the unlock failed
+        /// </summary>
+        public string? ErrorMessage { get; set; }
+    }
+
+    /// <summary>
+    /// Response from a trade execution
+    /// </summary>
+    public class ExecuteTradeResponse
+    {
+        /// <summary>
+        /// Indicates if the trade was successfully executed
+        /// </summary>
+        public bool Success { get; set; }
+
+        /// <summary>
+        /// Unique identifier for the created trade
+        /// </summary>
+        public string TradeId { get; set; }
+
+        /// <summary>
+        /// Error message if the trade execution failed
+        /// </summary>
+        public string? ErrorMessage { get; set; }
     }
 }

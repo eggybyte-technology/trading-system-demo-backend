@@ -82,7 +82,7 @@ namespace RiskService.Services
         }
 
         /// <inheritdoc />
-        public async Task<bool> AcknowledgeAlertAsync(ObjectId alertId, ObjectId userId)
+        public async Task<RiskAlert?> AcknowledgeAlertAsync(ObjectId alertId, ObjectId userId, string? comment = null)
         {
             try
             {
@@ -96,15 +96,20 @@ namespace RiskService.Services
 
                 var update = Builders<RiskAlert>.Update
                     .Set(a => a.IsAcknowledged, true)
-                    .Set(a => a.AcknowledgedAt, DateTime.UtcNow);
+                    .Set(a => a.AcknowledgedAt, DateTime.UtcNow)
+                    .Set(a => a.AcknowledgmentComment, comment);
 
-                var result = await riskAlertCollection.UpdateOneAsync(filter, update);
-                return result.ModifiedCount > 0;
+                var options = new FindOneAndUpdateOptions<RiskAlert>
+                {
+                    ReturnDocument = ReturnDocument.After
+                };
+
+                return await riskAlertCollection.FindOneAndUpdateAsync(filter, update, options);
             }
             catch (Exception ex)
             {
                 _logger.LogError($"Error acknowledging alert: {ex.Message}");
-                return false;
+                return null;
             }
         }
 

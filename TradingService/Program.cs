@@ -10,6 +10,10 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using TradingService.Services;
 using TradingService.Repositories;
 using System.IdentityModel.Tokens.Jwt;
+using System;
+using MongoDB.Bson.Serialization;
+using MongoDB.Bson.Serialization.Serializers;
+using CommonLib.Api;
 
 // Create and configure the WebApplication builder
 var builder = WebApplication.CreateBuilder(args);
@@ -31,6 +35,9 @@ builder.Services.AddControllers()
         options.JsonSerializerOptions.Converters.Add(new ObjectIdJsonConverter());
         options.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
     });
+
+// Register CommonLib/Api services for inter-service communication
+builder.Services.AddTradingSystemServices();
 
 // Register CommonLib services
 builder.Services.AddScoped<ILoggerService, LoggerService>();

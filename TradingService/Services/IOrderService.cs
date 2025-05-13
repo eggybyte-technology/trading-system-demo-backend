@@ -41,7 +41,7 @@ namespace TradingService.Services
         /// <param name="userId">The user ID</param>
         /// <param name="symbol">Optional symbol filter</param>
         /// <returns>List of open orders</returns>
-        Task<List<OrderResponse>> GetOpenOrdersAsync(ObjectId userId, string? symbol = null);
+        Task<List<Order>> GetOpenOrdersAsync(ObjectId userId, string? symbol = null);
 
         /// <summary>
         /// Gets order history for a user with pagination
@@ -49,7 +49,7 @@ namespace TradingService.Services
         /// <param name="userId">The user ID</param>
         /// <param name="request">History request parameters (symbol, status, timeframe, pagination)</param>
         /// <returns>Order history with pagination</returns>
-        Task<OrderHistoryResponse> GetOrderHistoryAsync(ObjectId userId, OrderHistoryRequest request);
+        Task<(List<Order> Orders, int Total)> GetOrderHistoryAsync(ObjectId userId, OrderHistoryRequest request);
 
         /// <summary>
         /// Gets trade history for a user with pagination
@@ -61,12 +61,33 @@ namespace TradingService.Services
         /// <param name="page">Page number (1-based)</param>
         /// <param name="pageSize">Page size</param>
         /// <returns>Trade history with pagination</returns>
-        Task<(List<TradeResponse> Trades, int Total)> GetTradeHistoryAsync(
+        Task<(List<Trade> Trades, int Total)> GetTradeHistoryAsync(
             ObjectId userId,
             string? symbol = null,
             long? startTime = null,
             long? endTime = null,
             int page = 1,
             int pageSize = 20);
+
+        /// <summary>
+        /// Locks an order for the matching process
+        /// </summary>
+        /// <param name="request">Lock order request</param>
+        /// <returns>Lock order response</returns>
+        Task<LockOrderResponse> LockOrderAsync(LockOrderRequest request);
+
+        /// <summary>
+        /// Unlocks a previously locked order
+        /// </summary>
+        /// <param name="request">Unlock order request</param>
+        /// <returns>Unlock order response</returns>
+        Task<UnlockOrderResponse> UnlockOrderAsync(UnlockOrderRequest request);
+
+        /// <summary>
+        /// Updates order status after matching
+        /// </summary>
+        /// <param name="request">Update order status request</param>
+        /// <returns>Success flag</returns>
+        Task<bool> UpdateOrderStatusAsync(UpdateOrderStatusRequest request);
     }
 }

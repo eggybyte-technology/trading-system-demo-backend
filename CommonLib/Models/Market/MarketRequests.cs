@@ -48,4 +48,31 @@ namespace CommonLib.Models.Market
         /// </summary>
         public int Limit { get; set; } = 500;
     }
+
+    /// <summary>
+    /// Ticker request parameters
+    /// </summary>
+    public class TickerRequest
+    {
+        /// <summary>
+        /// Symbol name
+        /// </summary>
+        public string Symbol { get; set; } = string.Empty;
+    }
+
+    /// <summary>
+    /// Recent trades request parameters
+    /// </summary>
+    public class RecentTradesRequest
+    {
+        /// <summary>
+        /// Symbol name
+        /// </summary>
+        public string Symbol { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Maximum number of trades to return (default: 100, max: 1000)
+        /// </summary>
+        public int Limit { get; set; } = 100;
+    }
 }

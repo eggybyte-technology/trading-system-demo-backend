@@ -76,6 +76,12 @@ namespace CommonLib.Models.Account
         public DateTime? CompletedAt { get; set; }
 
         /// <summary>
+        /// Transaction ID for blockchain transaction
+        /// </summary>
+        [BsonElement("transactionId")]
+        public string? TransactionId { get; set; }
+
+        /// <summary>
         /// Gets the list of indexes for this model
         /// </summary>
         /// <returns>A list of index definitions with their uniqueness flag</returns>

@@ -70,6 +70,12 @@ namespace CommonLib.Models.Risk
         public DateTime? AcknowledgedAt { get; set; }
 
         /// <summary>
+        /// Acknowledgment comment
+        /// </summary>
+        [BsonElement("acknowledgmentComment")]
+        public string? AcknowledgmentComment { get; set; }
+
+        /// <summary>
         /// Creation time
         /// </summary>
         [BsonElement("createdAt")]

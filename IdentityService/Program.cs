@@ -10,6 +10,7 @@ using IdentityService.Repositories;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using System.IdentityModel.Tokens.Jwt;
 using CommonLib.Models.Identity;
+using CommonLib.Api;
 
 // Create and configure the WebApplication builder
 var builder = WebApplication.CreateBuilder(args);
@@ -49,6 +50,9 @@ builder.Services.AddScoped<ISecurityTokenRepository, SecurityTokenRepository>();
 // Register HttpClientService for inter-service communication
 builder.Services.AddHttpClient();
 builder.Services.AddScoped<IHttpClientService, HttpClientService>();
+
+// Register CommonLib/Api services for inter-service communication
+builder.Services.AddTradingSystemServices();
 
 // ======================================================
 // JWT AUTHENTICATION CONFIGURATION

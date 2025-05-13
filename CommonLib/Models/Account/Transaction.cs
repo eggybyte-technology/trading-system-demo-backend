@@ -34,16 +34,40 @@ namespace CommonLib.Models.Account
         public ObjectId UserId { get; set; }
 
         /// <summary>
+        /// Order ID (for trade transactions)
+        /// </summary>
+        [BsonElement("orderId")]
+        public string OrderId { get; set; } = string.Empty;
+
+        /// <summary>
         /// Asset type
         /// </summary>
         [BsonElement("asset")]
         public string Asset { get; set; } = string.Empty;
 
         /// <summary>
+        /// Secondary Asset (for trade transactions)
+        /// </summary>
+        [BsonElement("secondaryAsset")]
+        public string SecondaryAsset { get; set; } = string.Empty;
+
+        /// <summary>
         /// Transaction amount (positive for deposit, negative for withdrawal)
         /// </summary>
         [BsonElement("amount")]
         public decimal Amount { get; set; }
+
+        /// <summary>
+        /// Price (for trade transactions)
+        /// </summary>
+        [BsonElement("price")]
+        public decimal Price { get; set; }
+
+        /// <summary>
+        /// Total value (for trade transactions)
+        /// </summary>
+        [BsonElement("totalValue")]
+        public decimal TotalValue { get; set; }
 
         /// <summary>
         /// Transaction type (deposit, withdrawal, trade, etc.)
@@ -89,6 +113,10 @@ namespace CommonLib.Models.Account
                 ),
                 new Tuple<IndexKeysDefinition<Transaction>, bool>(
                     Builders<Transaction>.IndexKeys.Ascending(t => t.Type),
+                    false
+                ),
+                new Tuple<IndexKeysDefinition<Transaction>, bool>(
+                    Builders<Transaction>.IndexKeys.Ascending(t => t.OrderId),
                     false
                 )
             };

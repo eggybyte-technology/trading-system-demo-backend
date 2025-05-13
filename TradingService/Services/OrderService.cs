@@ -4,8 +4,10 @@ using System.Linq;
 using System.Threading.Tasks;
 using CommonLib.Models.Trading;
 using CommonLib.Services;
+using Microsoft.Extensions.Configuration;
 using MongoDB.Bson;
 using MongoDB.Driver;
+using CommonLib.Api;
 
 namespace TradingService.Services
 {
@@ -18,6 +20,8 @@ namespace TradingService.Services
         private readonly ILoggerService _logger;
         private readonly IHttpClientService _httpClient;
         private readonly string _accountServiceBaseUrl;
+        private readonly CommonLib.Api.AccountService _accountService;
+        private readonly string _serviceAuthToken;
 
         /// <summary>
         /// Initializes a new instance of the OrderService
@@ -26,16 +30,23 @@ namespace TradingService.Services
         /// <param name="logger">The logger service</param>
         /// <param name="httpClient">HTTP client service for communicating with other services</param>
         /// <param name="configuration">Application configuration</param>
+        /// <param name="accountService">Account service client for API calls</param>
         public OrderService(
             MongoDbConnectionFactory dbFactory,
             ILoggerService logger,
             IHttpClientService httpClient,
-            IConfiguration configuration)
+            IConfiguration configuration,
+            CommonLib.Api.AccountService accountService)
         {
             _dbFactory = dbFactory;
             _logger = logger;
             _httpClient = httpClient;
             _accountServiceBaseUrl = configuration["ServiceUrls:AccountService"] ?? "http://account:8080";
+            _accountService = accountService;
+
+            // Get system token for inter-service communication
+            var jwtSection = configuration.GetSection("JwtSettings");
+            _serviceAuthToken = jwtSection["ServiceToken"] ?? "default-service-token";
         }
 
         /// <inheritdoc/>
@@ -163,7 +174,7 @@ namespace TradingService.Services
         }
 
         /// <inheritdoc/>
-        public async Task<List<OrderResponse>> GetOpenOrdersAsync(ObjectId userId, string? symbol = null)
+        public async Task<List<Order>> GetOpenOrdersAsync(ObjectId userId, string? symbol = null)
         {
             try
             {
@@ -178,8 +189,7 @@ namespace TradingService.Services
                     filter = Builders<Order>.Filter.And(filter, Builders<Order>.Filter.Eq(o => o.Symbol, symbol));
                 }
 
-                var orders = await orderCollection.Find(filter).ToListAsync();
-                return orders.Select(ConvertToOrderResponse).ToList();
+                return await orderCollection.Find(filter).ToListAsync();
             }
             catch (Exception ex)
             {
@@ -189,7 +199,7 @@ namespace TradingService.Services
         }
 
         /// <inheritdoc/>
-        public async Task<OrderHistoryResponse> GetOrderHistoryAsync(ObjectId userId, OrderHistoryRequest request)
+        public async Task<(List<Order> Orders, int Total)> GetOrderHistoryAsync(ObjectId userId, OrderHistoryRequest request)
         {
             try
             {
@@ -232,13 +242,7 @@ namespace TradingService.Services
                     .Limit(request.PageSize)
                     .ToListAsync();
 
-                return new OrderHistoryResponse
-                {
-                    Total = (int)total,
-                    Page = request.Page,
-                    PageSize = request.PageSize,
-                    Orders = orders.Select(ConvertToOrderResponse).ToList()
-                };
+                return (orders, (int)total);
             }
             catch (Exception ex)
             {
@@ -248,7 +252,7 @@ namespace TradingService.Services
         }
 
         /// <inheritdoc/>
-        public async Task<(List<TradeResponse> Trades, int Total)> GetTradeHistoryAsync(
+        public async Task<(List<Trade> Trades, int Total)> GetTradeHistoryAsync(
             ObjectId userId,
             string? symbol = null,
             long? startTime = null,
@@ -267,7 +271,12 @@ namespace TradingService.Services
                     : null;
 
                 var tradeCollection = _dbFactory.GetCollection<Trade>();
-                var filter = Builders<Trade>.Filter.Eq(t => t.UserId, userId);
+
+                // Create filter for trades where user is either buyer or seller
+                var filter = Builders<Trade>.Filter.Or(
+                    Builders<Trade>.Filter.Eq(t => t.BuyerUserId, userId),
+                    Builders<Trade>.Filter.Eq(t => t.SellerUserId, userId)
+                );
 
                 if (!string.IsNullOrEmpty(symbol))
                 {
@@ -290,12 +299,250 @@ namespace TradingService.Services
                     .Limit(pageSize)
                     .ToListAsync();
 
-                return (trades.Select(ConvertToTradeResponse).ToList(), (int)total);
+                // Set the UserId property for convenience in response mapping
+                foreach (var trade in trades)
+                {
+                    trade.UserId = userId;
+                }
+
+                return (trades, (int)total);
             }
             catch (Exception ex)
             {
                 _logger.LogError($"Error getting trade history for user {userId}: {ex.Message}");
                 throw;
+            }
+        }
+
+        /// <inheritdoc/>
+        public async Task<LockOrderResponse> LockOrderAsync(LockOrderRequest request)
+        {
+            try
+            {
+                if (!ObjectId.TryParse(request.OrderId, out var orderObjectId))
+                {
+                    return new LockOrderResponse
+                    {
+                        Success = false,
+                        ErrorMessage = "Invalid order ID format",
+                        LockId = request.LockId
+                    };
+                }
+
+                var orderCollection = _dbFactory.GetCollection<Order>();
+
+                // Find the order and make sure it's not already locked
+                var filter = Builders<Order>.Filter.And(
+                    Builders<Order>.Filter.Eq(o => o.Id, orderObjectId),
+                    Builders<Order>.Filter.Eq(o => o.Status, "NEW"), // Only lock NEW orders
+                    Builders<Order>.Filter.Eq(o => o.IsLocked, false) // Not already locked
+                );
+
+                // Update to set the lock
+                var update = Builders<Order>.Update
+                    .Set(o => o.IsLocked, true)
+                    .Set(o => o.LockId, request.LockId)
+                    .Set(o => o.LockExpiration, DateTime.UtcNow.AddSeconds(request.TimeoutSeconds))
+                    .Set(o => o.UpdatedAt, DateTime.UtcNow);
+
+                var result = await orderCollection.FindOneAndUpdateAsync(
+                    filter,
+                    update,
+                    new FindOneAndUpdateOptions<Order> { ReturnDocument = ReturnDocument.After }
+                );
+
+                if (result == null)
+                {
+                    // Check if the order exists at all
+                    var orderExists = await orderCollection.Find(o => o.Id == orderObjectId).AnyAsync();
+
+                    if (!orderExists)
+                    {
+                        return new LockOrderResponse
+                        {
+                            Success = false,
+                            ErrorMessage = "Order not found",
+                            LockId = request.LockId
+                        };
+                    }
+
+                    // Order exists but couldn't be locked
+                    return new LockOrderResponse
+                    {
+                        Success = false,
+                        ErrorMessage = "Order is already locked or not in a lockable state",
+                        LockId = request.LockId
+                    };
+                }
+
+                // Convert the Order to OrderResponse
+                var orderResponse = new OrderResponse
+                {
+                    OrderId = result.Id.ToString(),
+                    Symbol = result.Symbol,
+                    UserId = result.UserId.ToString(),
+                    Price = result.Price,
+                    OrigQty = result.OriginalQuantity,
+                    ExecutedQty = result.ExecutedQuantity,
+                    Status = result.Status,
+                    TimeInForce = result.TimeInForce,
+                    Type = result.Type,
+                    Side = result.Side,
+                    StopPrice = result.StopPrice,
+                    IcebergQty = result.IcebergQuantity,
+                    Time = new DateTimeOffset(result.CreatedAt).ToUnixTimeMilliseconds(),
+                    UpdateTime = new DateTimeOffset(result.UpdatedAt).ToUnixTimeMilliseconds(),
+                    IsWorking = result.Status != "CANCELED" && result.Status != "FILLED" && result.Status != "REJECTED"
+                };
+
+                return new LockOrderResponse
+                {
+                    Success = true,
+                    LockId = request.LockId,
+                    Order = orderResponse,
+                    ExpirationTimestamp = new DateTimeOffset(result.LockExpiration.Value).ToUnixTimeMilliseconds()
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error locking order {request.OrderId}: {ex.Message}");
+                return new LockOrderResponse
+                {
+                    Success = false,
+                    ErrorMessage = $"Error locking order: {ex.Message}",
+                    LockId = request.LockId
+                };
+            }
+        }
+
+        /// <inheritdoc/>
+        public async Task<UnlockOrderResponse> UnlockOrderAsync(UnlockOrderRequest request)
+        {
+            try
+            {
+                if (!ObjectId.TryParse(request.OrderId, out var orderObjectId))
+                {
+                    return new UnlockOrderResponse
+                    {
+                        Success = false,
+                        ErrorMessage = "Invalid order ID format"
+                    };
+                }
+
+                var orderCollection = _dbFactory.GetCollection<Order>();
+
+                // Find the order and make sure it's locked with the correct lock ID
+                var filter = Builders<Order>.Filter.And(
+                    Builders<Order>.Filter.Eq(o => o.Id, orderObjectId),
+                    Builders<Order>.Filter.Eq(o => o.IsLocked, true),
+                    Builders<Order>.Filter.Eq(o => o.LockId, request.LockId)
+                );
+
+                // Update to release the lock
+                var update = Builders<Order>.Update
+                    .Set(o => o.IsLocked, false)
+                    .Set(o => o.LockId, null)
+                    .Set(o => o.LockExpiration, null)
+                    .Set(o => o.UpdatedAt, DateTime.UtcNow);
+
+                var result = await orderCollection.UpdateOneAsync(filter, update);
+
+                if (result.ModifiedCount == 0)
+                {
+                    // Check if the order exists at all
+                    var orderExists = await orderCollection.Find(o => o.Id == orderObjectId).AnyAsync();
+
+                    if (!orderExists)
+                    {
+                        return new UnlockOrderResponse
+                        {
+                            Success = false,
+                            ErrorMessage = "Order not found"
+                        };
+                    }
+
+                    // Order exists but couldn't be unlocked with this lock ID
+                    return new UnlockOrderResponse
+                    {
+                        Success = false,
+                        ErrorMessage = "Order is not locked or lock ID doesn't match"
+                    };
+                }
+
+                return new UnlockOrderResponse
+                {
+                    Success = true
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error unlocking order {request.OrderId}: {ex.Message}");
+                return new UnlockOrderResponse
+                {
+                    Success = false,
+                    ErrorMessage = $"Error unlocking order: {ex.Message}"
+                };
+            }
+        }
+
+        /// <inheritdoc/>
+        public async Task<bool> UpdateOrderStatusAsync(UpdateOrderStatusRequest request)
+        {
+            try
+            {
+                if (!ObjectId.TryParse(request.OrderId, out var orderObjectId))
+                {
+                    return false;
+                }
+
+                var orderCollection = _dbFactory.GetCollection<Order>();
+
+                // Create filter based on whether a lock ID is provided
+                FilterDefinition<Order> filter;
+                if (!string.IsNullOrEmpty(request.LockId))
+                {
+                    // If lock ID is provided, ensure it matches
+                    filter = Builders<Order>.Filter.And(
+                        Builders<Order>.Filter.Eq(o => o.Id, orderObjectId),
+                        Builders<Order>.Filter.Eq(o => o.IsLocked, true),
+                        Builders<Order>.Filter.Eq(o => o.LockId, request.LockId)
+                    );
+                }
+                else
+                {
+                    // If no lock ID, just check the ID
+                    filter = Builders<Order>.Filter.Eq(o => o.Id, orderObjectId);
+                }
+
+                // Update the order status and quantities
+                var update = Builders<Order>.Update
+                    .Set(o => o.Status, request.Status)
+                    .Set(o => o.ExecutedQuantity, request.ExecutedQuantity)
+                    .Set(o => o.CumulativeQuoteQuantity, request.CumulativeQuoteQuantity)
+                    .Set(o => o.UpdatedAt, DateTime.UtcNow);
+
+                // If we're updating based on a lock, also release the lock
+                if (!string.IsNullOrEmpty(request.LockId))
+                {
+                    update = update
+                        .Set(o => o.IsLocked, false)
+                        .Set(o => o.LockId, null)
+                        .Set(o => o.LockExpiration, null);
+                }
+
+                // If the order is completely filled or canceled, mark it as not working
+                if (request.Status == "FILLED" || request.Status == "CANCELED" || request.Status == "REJECTED")
+                {
+                    update = update.Set(o => o.IsWorking, false);
+                }
+
+                var result = await orderCollection.UpdateOneAsync(filter, update);
+                return result.ModifiedCount > 0;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error updating order status for {request.OrderId}: {ex.Message}");
+                return false;
             }
         }
 
@@ -356,70 +603,6 @@ namespace TradingService.Services
         {
             var validValues = new[] { "GTC", "IOC", "FOK" };
             return validValues.Contains(timeInForce);
-        }
-
-        /// <summary>
-        /// Converts an Order entity to an OrderResponse
-        /// </summary>
-        /// <param name="order">The order to convert</param>
-        /// <returns>OrderResponse representing the order</returns>
-        private OrderResponse ConvertToOrderResponse(Order order)
-        {
-            return new OrderResponse
-            {
-                OrderId = order.Id.ToString(),
-                Symbol = order.Symbol,
-                UserId = order.UserId.ToString(),
-                Price = order.Price,
-                OrigQty = order.OriginalQuantity,
-                ExecutedQty = order.ExecutedQuantity,
-                Status = order.Status,
-                TimeInForce = order.TimeInForce,
-                Type = order.Type,
-                Side = order.Side,
-                StopPrice = order.StopPrice,
-                IcebergQty = order.IcebergQuantity,
-                Time = new DateTimeOffset(order.CreatedAt).ToUnixTimeSeconds(),
-                UpdateTime = new DateTimeOffset(order.UpdatedAt).ToUnixTimeSeconds(),
-                IsWorking = order.IsWorking,
-                Fills = order.Trades.Select(ConvertToOrderFill).ToList()
-            };
-        }
-
-        /// <summary>
-        /// Converts a Trade entity to an OrderFill
-        /// </summary>
-        /// <param name="trade">The trade to convert</param>
-        /// <returns>OrderFill representing the trade</returns>
-        private OrderFill ConvertToOrderFill(Trade trade)
-        {
-            return new OrderFill
-            {
-                Price = trade.Price,
-                Quantity = trade.Quantity,
-                Commission = 0, // In a real system, calculate this based on user's tier
-                CommissionAsset = "USDT", // This might vary depending on the platform
-                TradeId = trade.Id.ToString(),
-                Time = new DateTimeOffset(trade.CreatedAt).ToUnixTimeSeconds()
-            };
-        }
-
-        /// <summary>
-        /// Converts a Trade entity to a TradeResponse
-        /// </summary>
-        /// <param name="trade">The trade to convert</param>
-        /// <returns>TradeResponse representing the trade</returns>
-        private TradeResponse ConvertToTradeResponse(Trade trade)
-        {
-            return new TradeResponse
-            {
-                Id = trade.Id.ToString(),
-                Symbol = trade.Symbol,
-                Price = trade.Price,
-                Quantity = trade.Quantity,
-                Time = new DateTimeOffset(trade.CreatedAt).ToUnixTimeSeconds(),
-                IsBuyerMaker = trade.IsBuyerMaker
-            };
         }
 
         #endregion

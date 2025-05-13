@@ -116,4 +116,15 @@ namespace CommonLib.Models.Notification
         /// </summary>
         public long Timestamp { get; set; }
     }
+
+    /// <summary>
+    /// Response model for delete notifications operation
+    /// </summary>
+    public class DeleteNotificationsResponse
+    {
+        /// <summary>
+        /// Number of notifications deleted
+        /// </summary>
+        public int DeletedCount { get; set; }
+    }
 }

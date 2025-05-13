@@ -28,6 +28,12 @@ namespace CommonLib.Models.Account
         public ObjectId UserId { get; set; }
 
         /// <summary>
+        /// Username
+        /// </summary>
+        [BsonElement("username")]
+        public string Username { get; set; } = string.Empty;
+
+        /// <summary>
         /// Creation time
         /// </summary>
         [BsonElement("createdAt")]
