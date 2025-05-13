@@ -4,6 +4,7 @@ using System.Net.Http;
 using System.Net.Http.Json;
 using System.Threading.Tasks;
 using System.IO;
+using System.Text.Json;
 using Bogus;
 using Newtonsoft.Json;
 using Spectre.Console;
@@ -26,6 +27,7 @@ namespace SimulationTest.Core
         private readonly string _userLogFile;
         private readonly string _responseLogFile;
         private readonly object _userLogLock = new object();
+        private readonly string _logFolderPath;
 
         /// <summary>
         /// Initializes a new instance of the UserService class
@@ -81,6 +83,7 @@ namespace SimulationTest.Core
             _httpClient = httpClient;
             _httpClientFactory = httpClientFactory;
             _jsonOptions = jsonOptions;
+            _logFolderPath = testFolderPath;
 
             // Create logs directory if it doesn't exist
             Directory.CreateDirectory("logs");
@@ -151,33 +154,23 @@ namespace SimulationTest.Core
         }
 
         /// <summary>
-        /// Creates test users for simulation
+        /// Creates test users for the stress test
         /// </summary>
-        /// <param name="numUsers">Number of users to create</param>
-        /// <param name="verbose">Whether to log verbose messages</param>
-        /// <returns>List of created user credentials</returns>
-        public async Task<List<UserCredential>> CreateTestUsersAsync(int numUsers, bool verbose)
+        public async Task<List<LoginResponse>> CreateTestUsersAsync(int userCount, bool verbose = false, IProgress<TestProgress> progress = null)
         {
-            // Non-interactive implementation that doesn't use AnsiConsole.Status
-            Console.WriteLine($"Creating {numUsers} test users...");
+            List<LoginResponse> users = new List<LoginResponse>();
+            int existingUsers = 0;
+            int failedRegistrations = 0;
+            int successfulRegistrations = 0;
 
-            // Create a faker for generating user data
-            var faker = new Faker();
-
-            for (int i = 0; i < numUsers; i++)
+            for (int i = 0; i < userCount; i++)
             {
-                Console.WriteLine($"Creating user {i + 1}/{numUsers}");
-
-                // Generate unique username using timestamp + random number
-                var timestamp = DateTime.Now.ToString("yyyyMMddHHmmss");
-                var randomSuffix = _random.Next(10000, 99999);
-                var username = $"user_{timestamp}_{randomSuffix}";
-                var email = $"{username}@trading-simulation.test";
-                var password = "Test123!";
+                string username = $"testuser_{Guid.NewGuid().ToString("N").Substring(0, 8)}";
+                string email = $"{username}@example.com";
+                string password = $"Password1!{Guid.NewGuid().ToString("N").Substring(0, 8)}";
 
                 try
                 {
-                    // Create register request
                     var registerRequest = new RegisterRequest
                     {
                         Username = username,
@@ -185,153 +178,167 @@ namespace SimulationTest.Core
                         Password = password
                     };
 
-                    await LogUserActionAsync($"Registering user: {email}", verbose);
-
-                    // Send registration request
-                    var registerResponse = await _httpClient.PostAsJsonAsync("/auth/register", registerRequest);
-                    string content = await registerResponse.Content.ReadAsStringAsync();
-
-                    // Log the full response
-                    await LogResponseAsync($"Register Response:\nStatus: {registerResponse.StatusCode}\nContent: {content}");
-
-                    if (registerResponse.IsSuccessStatusCode)
+                    if (verbose)
                     {
-                        try
+                        Console.WriteLine($"Registering user {i + 1}/{userCount}: {username}");
+                    }
+
+                    var response = await _httpClient.PostAsJsonAsync("/auth/register", registerRequest);
+                    string content = await response.Content.ReadAsStringAsync();
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        if (content.Contains("already exists"))
                         {
-                            // Try parsing directly into RegisterResponse first
-                            var directResponse = JsonConvert.DeserializeObject<RegisterResponse>(content);
-                            if (directResponse != null && !string.IsNullOrEmpty(directResponse.UserId))
+                            if (verbose)
                             {
-                                var user = new UserCredential
-                                {
-                                    UserId = directResponse.UserId,
-                                    Email = email,
-                                    Token = directResponse.Token
-                                };
-
-                                _users.Add(user);
-
-                                // Setup user-specific HTTP clients with JWT token
-                                _httpClientFactory.SetUserAuthToken(user.UserId, user.Token);
-
-                                await LogUserActionAsync($"User registered successfully: {user.Email}, UserId: {user.UserId}", verbose);
-                                await LogUserActionAsync($"JWT Token: {user.Token.Substring(0, 20)}...", verbose);
-
-                                if (verbose)
-                                    Console.WriteLine($"Registered new user: {username} ({email})");
-
-                                continue; // Skip to next iteration
+                                Console.WriteLine($"User already exists, trying to login");
                             }
-                        }
-                        catch (Exception ex)
-                        {
-                            await LogUserActionAsync($"Error parsing direct response: {ex.Message}", verbose);
-                        }
+                            existingUsers++;
 
-                        // Try parsing with wrapper if direct parsing failed
-                        try
-                        {
-                            var response = JsonConvert.DeserializeObject<ApiResponse<RegisterResponse>>(content);
-
-                            if (response?.Data != null)
+                            // Try to login
+                            var loginResponse = await LoginAsync(email, password);
+                            if (loginResponse != null)
                             {
-                                var user = new UserCredential
-                                {
-                                    UserId = response.Data.UserId,
-                                    Email = email,
-                                    Token = response.Data.Token
-                                };
-
-                                _users.Add(user);
-
-                                // Setup user-specific HTTP clients with JWT token
-                                _httpClientFactory.SetUserAuthToken(user.UserId, user.Token);
-
-                                await LogUserActionAsync($"User registered successfully: {user.Email}, UserId: {user.UserId}", verbose);
-                                await LogUserActionAsync($"JWT Token: {user.Token.Substring(0, 20)}...", verbose);
-
-                                if (verbose)
-                                    Console.WriteLine($"Registered new user: {username} ({email})");
+                                users.Add(loginResponse);
+                                successfulRegistrations++;
                             }
                             else
                             {
-                                // Last attempt: try to manually parse the JSON
-                                try
+                                failedRegistrations++;
+                                if (verbose)
                                 {
-                                    var jsonData = JsonConvert.DeserializeObject<dynamic>(content);
-                                    string? userId = null;
-                                    string? token = null;
-
-                                    // Try to look for common patterns
-                                    if (jsonData != null)
-                                    {
-                                        if (jsonData.userId != null)
-                                            userId = (string)jsonData.userId;
-                                        else if (jsonData.UserId != null)
-                                            userId = (string)jsonData.UserId;
-                                        else if (jsonData.data != null && jsonData.data.userId != null)
-                                            userId = (string)jsonData.data.userId;
-                                        else if (jsonData.data != null && jsonData.data.UserId != null)
-                                            userId = (string)jsonData.data.UserId;
-
-                                        if (jsonData.token != null)
-                                            token = (string)jsonData.token;
-                                        else if (jsonData.Token != null)
-                                            token = (string)jsonData.Token;
-                                        else if (jsonData.data != null && jsonData.data.token != null)
-                                            token = (string)jsonData.data.token;
-                                        else if (jsonData.data != null && jsonData.data.Token != null)
-                                            token = (string)jsonData.data.Token;
-
-                                        if (!string.IsNullOrEmpty(userId) && !string.IsNullOrEmpty(token))
-                                        {
-                                            var user = new UserCredential
-                                            {
-                                                UserId = userId,
-                                                Email = email,
-                                                Token = token
-                                            };
-
-                                            _users.Add(user);
-
-                                            // Setup user-specific HTTP clients with JWT token
-                                            _httpClientFactory.SetUserAuthToken(user.UserId, user.Token);
-
-                                            await LogUserActionAsync($"User registered with manual parsing: {user.Email}, UserId: {user.UserId}", verbose);
-
-                                            if (verbose)
-                                                Console.WriteLine($"Registered new user (manual): {username} ({email})");
-                                        }
-                                    }
-                                }
-                                catch (Exception parseEx)
-                                {
-                                    await LogUserActionAsync($"Final attempt to parse response failed: {parseEx.Message}", verbose);
+                                    Console.WriteLine($"Failed to login existing user: {email}");
                                 }
                             }
                         }
-                        catch (Exception ex)
+                        else
                         {
-                            await LogUserActionAsync($"Error parsing response: {ex.Message}", verbose);
+                            failedRegistrations++;
+                            if (verbose)
+                            {
+                                Console.WriteLine($"Failed to register user: {content}");
+                            }
                         }
                     }
                     else
                     {
-                        await LogUserActionAsync($"Registration failed: {content}", verbose);
-                        Console.WriteLine($"Failed to register user: {content}");
+                        if (verbose)
+                        {
+                            Console.WriteLine($"Successfully registered: {username}");
+                        }
+
+                        // Try to parse the response
+                        try
+                        {
+                            var jsonOptions = new JsonSerializerOptions
+                            {
+                                PropertyNameCaseInsensitive = true
+                            };
+
+                            var apiResponse = JsonSerializer.Deserialize<ApiResponse<RegisterResponse>>(content, jsonOptions);
+                            if (apiResponse?.Data != null)
+                            {
+                                var registeredUser = new LoginResponse
+                                {
+                                    Username = apiResponse.Data.Username,
+                                    UserId = apiResponse.Data.UserId,
+                                    Token = apiResponse.Data.Token,
+                                    RefreshToken = apiResponse.Data.RefreshToken,
+                                    Expiration = apiResponse.Data.Expiration
+                                };
+
+                                users.Add(registeredUser);
+                                successfulRegistrations++;
+
+                                // Configure the HttpClientFactory with the user token
+                                _httpClientFactory.SetUserAuthToken(registeredUser.UserId, registeredUser.Token);
+                            }
+                            else
+                            {
+                                var registerResponse = JsonSerializer.Deserialize<RegisterResponse>(content, jsonOptions);
+                                if (registerResponse != null)
+                                {
+                                    var registeredUser = new LoginResponse
+                                    {
+                                        Username = registerResponse.Username,
+                                        UserId = registerResponse.UserId,
+                                        Token = registerResponse.Token,
+                                        RefreshToken = registerResponse.RefreshToken,
+                                        Expiration = registerResponse.Expiration
+                                    };
+
+                                    users.Add(registeredUser);
+                                    successfulRegistrations++;
+
+                                    // Configure the HttpClientFactory with the user token
+                                    _httpClientFactory.SetUserAuthToken(registeredUser.UserId, registeredUser.Token);
+                                }
+                                else
+                                {
+                                    failedRegistrations++;
+                                    if (verbose)
+                                    {
+                                        Console.WriteLine($"Failed to parse response: {content}");
+                                    }
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            failedRegistrations++;
+                            if (verbose)
+                            {
+                                Console.WriteLine($"Error parsing registration response: {ex.Message}");
+                            }
+                        }
                     }
                 }
                 catch (Exception ex)
                 {
-                    await LogUserActionAsync($"Exception during registration: {ex.Message}", verbose);
-                    Console.WriteLine($"Error registering user: {ex.Message}");
+                    failedRegistrations++;
+                    if (verbose)
+                    {
+                        Console.WriteLine($"Exception registering user: {ex.Message}");
+                    }
                 }
+
+                // 报告进度更新
+                if (progress != null)
+                {
+                    double successRate = (i + 1) > 0 ? (double)successfulRegistrations / (i + 1) * 100 : 0;
+
+                    progress.Report(new TestProgress
+                    {
+                        Message = "Registering users",
+                        Percentage = (int)(100.0 * (i + 1) / userCount),
+                        Completed = i + 1,
+                        Total = userCount,
+                        Passed = successfulRegistrations,
+                        Failed = failedRegistrations,
+                        Skipped = existingUsers,
+                        SuccessRate = successRate,
+                        LogMessage = $"Registered user {i + 1}/{userCount}: Success={successfulRegistrations}, Failed={failedRegistrations}, Existing={existingUsers}",
+                        Timestamp = DateTime.Now
+                    });
+                }
+
+                // Small delay to avoid overwhelming the API
+                await Task.Delay(50);
             }
 
-            Console.WriteLine($"Created {_users.Count} test users out of {numUsers} requested");
-            await LogUserActionAsync($"Completed creating {_users.Count} users out of {numUsers} requested", verbose);
+            if (verbose || users.Count < userCount)
+            {
+                Console.WriteLine($"User creation results: Total={userCount}, Success={successfulRegistrations}, Failed={failedRegistrations}, ExistingUsers={existingUsers}");
+            }
 
-            return _users;
+            // Save the credentials to a file for future reference/debugging
+            if (!string.IsNullOrEmpty(_logFolderPath))
+            {
+                SaveUsersToFile(users, Path.Combine(_logFolderPath, "users.json"));
+            }
+
+            return users;
         }
 
         /// <summary>
@@ -509,6 +516,80 @@ namespace SimulationTest.Core
                 Console.WriteLine($"{message}");
 
             return Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Attempts to login with the given credentials
+        /// </summary>
+        /// <param name="email">User email</param>
+        /// <param name="password">User password</param>
+        /// <returns>Login response if successful, null otherwise</returns>
+        public async Task<LoginResponse> LoginAsync(string email, string password)
+        {
+            try
+            {
+                var loginRequest = new LoginRequest
+                {
+                    Email = email,
+                    Password = password
+                };
+
+                var response = await _httpClient.PostAsJsonAsync("/auth/login", loginRequest);
+                string content = await response.Content.ReadAsStringAsync();
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    Console.WriteLine($"Login failed: {content}");
+                    return null;
+                }
+
+                try
+                {
+                    var apiResponse = System.Text.Json.JsonSerializer.Deserialize<ApiResponse<LoginResponse>>(content, _jsonOptions);
+                    if (apiResponse?.Data != null)
+                    {
+                        // Configure the HttpClientFactory with the user token
+                        _httpClientFactory.SetUserAuthToken(apiResponse.Data.UserId, apiResponse.Data.Token);
+                        return apiResponse.Data;
+                    }
+
+                    var directResponse = System.Text.Json.JsonSerializer.Deserialize<LoginResponse>(content, _jsonOptions);
+                    if (directResponse != null)
+                    {
+                        // Configure the HttpClientFactory with the user token
+                        _httpClientFactory.SetUserAuthToken(directResponse.UserId, directResponse.Token);
+                        return directResponse;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error parsing login response: {ex.Message}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Exception during login: {ex.Message}");
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Saves user credentials to a JSON file
+        /// </summary>
+        /// <param name="users">List of user credentials</param>
+        /// <param name="filePath">Path to save the file</param>
+        private void SaveUsersToFile(List<LoginResponse> users, string filePath)
+        {
+            try
+            {
+                string json = System.Text.Json.JsonSerializer.Serialize(users, _jsonOptions);
+                File.WriteAllText(filePath, json);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error saving users to file: {ex.Message}");
+            }
         }
     }
 }

@@ -117,7 +117,7 @@ namespace SimulationTest
             // Use default values without prompting
             int userCount = 20;
             int ordersPerUser = 1000;
-            int concurrency = 10;
+            int concurrency = 20;
             int timeoutSeconds = int.Parse(_configuration["TestSettings:TestTimeout"] ?? "30");
             string simulationMode = "random";
 
@@ -138,151 +138,49 @@ namespace SimulationTest
             AnsiConsole.Write(new Rule("[yellow]Running Stress Test[/]").RuleStyle("grey"));
             AnsiConsole.WriteLine();
 
-            // Create a progress display that shows both progress and status
-            TestResult testResult = null;
-            string testFolderPath = null;
-            DateTime startTime = DateTime.Now;
-            StressTestRunner testRunner = null;
-
             // Create a timestamp-based folder for this test run
             string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-            testFolderPath = Path.Combine("logs", $"stress_test_{timestamp}");
+            string testFolderPath = Path.Combine("logs", $"stress_test_{timestamp}");
             Directory.CreateDirectory(testFolderPath);
 
-            // Setup log file path (but don't open it here)
+            // Setup log file path
             var logFileName = Path.Combine(testFolderPath, "test.log");
 
-            // Run the test with a simple progress display
-            await AnsiConsole.Progress()
-               .AutoClear(false)
-               .HideCompleted(false)
-               .Columns(new ProgressColumn[]
-               {
-                    new TaskDescriptionColumn(),
-                    new ProgressBarColumn(),
-                    new PercentageColumn(),
-                    new SpinnerColumn(),
-                    new ElapsedTimeColumn()
-               })
-               .StartAsync(async ctx =>
-               {
-                   // Create three tasks - the main progress task, a stats display task, and a logs display task
-                   var progressTask = ctx.AddTask("[yellow]Running Stress Test[/]", maxValue: 100);
-                   var statsTask = ctx.AddTask("[blue]Stats[/]", maxValue: 1);
-                   var logsTask = ctx.AddTask("[green]Logs[/]", maxValue: 1);
+            // Create test progress display
+            using var progressDisplay = new TestProgressDisplay(TestProgressDisplay.TestType.StressTest);
+            TestResult testResult = null;
+            DateTime startTime = DateTime.Now;
 
-                   // Make the stats and logs tasks display as text only without progress indicators
-                   statsTask.IsIndeterminate = true;
-                   statsTask.Value = 0;
-                   statsTask.MaxValue = 0;
+            // Run test with unified progress display
+            await progressDisplay.StartAsync(async progressReporter =>
+            {
+                // Update configuration
+                var configOverrides = new Dictionary<string, string>
+                {
+                    ["StressTestSettings:SimulationMode"] = simulationMode,
+                    ["StressTestSettings:TestFolderPath"] = testFolderPath,
+                    ["StressTestSettings:LogFile"] = logFileName
+                };
 
-                   logsTask.IsIndeterminate = true;
-                   logsTask.Value = 0;
-                   logsTask.MaxValue = 0;
+                var config = new ConfigurationBuilder()
+                    .AddConfiguration(_configuration)
+                    .AddInMemoryCollection(configOverrides)
+                    .Build();
 
-                   try
-                   {
-                       // Create a progress handler that updates our progress bar and stats display
-                       var progressHandler = new Progress<TestProgress>(p =>
-                       {
-                           // Update progress bar
-                           if (p.Total > 0)
-                           {
-                               progressTask.MaxValue = p.Total;
-                               progressTask.Value = p.Completed;
-                               progressTask.Description = $"[yellow]{p.Message} ({p.Completed}/{p.Total})[/]";
-                           }
-                           else
-                           {
-                               progressTask.Value = p.Percentage;
-                               progressTask.Description = $"[yellow]{p.Message}[/]";
-                           }
+                startTime = DateTime.Now;
 
-                           // Update stats display in the second progress task
-                           if (testRunner != null)
-                           {
-                               var elapsedTime = DateTime.Now - startTime;
-                               var completed = testRunner.GetCompletedOperations();
-                               var successRate = testRunner.GetCurrentSuccessRate();
-                               var latency = testRunner.GetCurrentAverageLatency();
-                               var ordersPerSecond = elapsedTime.TotalSeconds > 0 ? completed / elapsedTime.TotalSeconds : 0;
+                // Create and run the stress test
+                var testRunner = new StressTestRunner(
+                    config,
+                    userCount,
+                    ordersPerUser,
+                    concurrency,
+                    timeoutSeconds,
+                    progressReporter);
 
-                               // Update stats display with colored format
-                               statsTask.Description =
-                                   $"[blue]Completed:[/] [bold]{completed}[/] | " +
-                                   $"[green]Success:[/] [bold]{successRate:F2}%[/] | " +
-                                   $"[yellow]Latency:[/] [bold]{latency:F2} ms[/] | " +
-                                   $"[cyan]Rate:[/] [bold]{ordersPerSecond:F2}/sec[/]";
-                           }
-
-                           // If there's a message, update the logs display
-                           if (!string.IsNullOrEmpty(p.LogMessage))
-                           {
-                               var logMessage = $"[[{DateTime.Now:HH:mm:ss.fff}]] {p.LogMessage}";
-                               logsTask.Description = $"[green]{logMessage}[/]";
-                           }
-                       });
-
-                       // Update configuration
-                       var configOverrides = new Dictionary<string, string>
-                       {
-                           ["StressTestSettings:SimulationMode"] = simulationMode,
-                           ["StressTestSettings:TestFolderPath"] = testFolderPath,
-                           ["StressTestSettings:LogFile"] = logFileName
-                       };
-
-                       var config = new ConfigurationBuilder()
-                              .AddConfiguration(_configuration)
-                              .AddInMemoryCollection(configOverrides)
-                              .Build();
-
-                       startTime = DateTime.Now;
-
-                       // Create and run the stress test
-                       testRunner = new StressTestRunner(
-                              config,
-                              userCount,
-                              ordersPerUser,
-                              concurrency,
-                              timeoutSeconds,
-                              progressHandler);
-
-                       // Run the test
-                       testResult = await testRunner.RunAsync();
-                   }
-                   catch (Exception ex)
-                   {
-                       progressTask.Description = $"[red]Test failed: {ex.Message}[/]";
-                       statsTask.Description = $"[red]ERROR: {ex.Message}[/]";
-                       logsTask.Description = $"[red]ERROR: {ex.Message}[/]";
-
-                       testResult = new TestResult
-                       {
-                           Success = false,
-                           ErrorMessage = ex.Message,
-                           StartTime = DateTime.Now,
-                           EndTime = DateTime.Now,
-                           ElapsedTime = TimeSpan.Zero
-                       };
-                   }
-                   finally
-                   {
-                       progressTask.Value = progressTask.MaxValue;
-                       progressTask.Description = "[green]Test completed[/]";
-
-                       // Final stats update
-                       if (testResult != null && testResult.Success)
-                       {
-                           statsTask.Description = $"[green]Success: {testResult.TotalRequests} orders | " +
-                                  $"Success Rate: {(testResult.TotalRequests > 0 ? (double)testResult.SuccessfulRequests / testResult.TotalRequests * 100 : 0):F2}% | " +
-                                  $"Avg Latency: {testResult.AverageLatency.TotalMilliseconds:F2} ms[/]";
-                       }
-                       else if (testResult != null)
-                       {
-                           statsTask.Description = $"[red]Failed: {testResult.ErrorMessage}[/]";
-                       }
-                   }
-               });
+                // Run the test
+                testResult = await testRunner.RunAsync();
+            });
 
             // Store the test folder path for later use
             if (testResult != null)
@@ -346,7 +244,7 @@ namespace SimulationTest
             string testFolderPath = Path.Combine("logs", $"unit_test_{timestamp}");
             Directory.CreateDirectory(testFolderPath);
 
-            // Setup log file path (but don't open it here)
+            // Setup log file path
             var logFileName = Path.Combine(testFolderPath, "test.log");
 
             // Configure unit test execution
@@ -369,96 +267,15 @@ namespace SimulationTest
 
             TestRunResults results = null;
 
-            try
+            // Create test progress display
+            using var progressDisplay = new TestProgressDisplay(TestProgressDisplay.TestType.UnitTest);
+
+            // Run test with unified progress display
+            await progressDisplay.StartAsync(async progressReporter =>
             {
-                // Create progress UI with the same pattern as stress test
-                await AnsiConsole.Progress()
-                    .AutoClear(false)
-                    .HideCompleted(false)
-                    .Columns(new ProgressColumn[]
-                    {
-                        new TaskDescriptionColumn(),
-                        new ProgressBarColumn(),
-                        new PercentageColumn(),
-                        new SpinnerColumn(),
-                        new ElapsedTimeColumn()
-                    })
-                    .StartAsync(async ctx =>
-                    {
-                        // Create three tasks - the main progress task, a stats display task, and a logs display task
-                        var progressTask = ctx.AddTask("[yellow]Running Unit Tests[/]", maxValue: 100);
-                        var statsTask = ctx.AddTask("[blue]Stats[/]", maxValue: 1);
-                        var logsTask = ctx.AddTask("[green]Logs[/]", maxValue: 1);
-
-                        // Make the stats and logs tasks display as text only without progress indicators
-                        statsTask.IsIndeterminate = true;
-                        statsTask.Value = 0;
-                        statsTask.MaxValue = 0;
-
-                        logsTask.IsIndeterminate = true;
-                        logsTask.Value = 0;
-                        logsTask.MaxValue = 0;
-
-                        try
-                        {
-                            // Create a progress handler
-                            var progressHandler = new Progress<TestProgress>(p =>
-                            {
-                                // Update progress bar
-                                if (p.Total > 0)
-                                {
-                                    progressTask.MaxValue = p.Total;
-                                    progressTask.Value = p.Completed;
-                                    progressTask.Description = $"[yellow]{p.Message} ({p.Completed}/{p.Total})[/]";
-                                }
-                                else
-                                {
-                                    progressTask.Value = p.Percentage;
-                                    progressTask.Description = $"[yellow]{p.Message}[/]";
-                                }
-
-                                // Update stats display
-                                if (p.Passed >= 0 && p.Failed >= 0)
-                                {
-                                    int total = p.Passed + p.Failed + (p.Skipped >= 0 ? p.Skipped : 0);
-                                    double passRate = total > 0 ? (double)p.Passed / total * 100 : 0;
-
-                                    statsTask.Description =
-                                        $"[green]Passed:[/] [bold]{p.Passed}[/] | " +
-                                        $"[red]Failed:[/] [bold]{p.Failed}[/] | " +
-                                        $"[yellow]Skipped:[/] [bold]{p.Skipped}[/] | " +
-                                        $"[blue]Pass Rate:[/] [bold]{passRate:F2}%[/]";
-                                }
-
-                                // If there's a message, update the logs display
-                                if (!string.IsNullOrEmpty(p.LogMessage))
-                                {
-                                    var logMessage = $"[[{DateTime.Now:HH:mm:ss.fff}]] {p.LogMessage}";
-                                    logsTask.Description = $"[green]{logMessage}[/]";
-                                }
-                            });
-
-                            var unitTestRunner = new UnitTestRunner(config, progressHandler);
-                            results = await unitTestRunner.RunTestsAsync();
-                        }
-                        catch (Exception ex)
-                        {
-                            progressTask.Description = $"[red]Test failed: {ex.Message}[/]";
-                            statsTask.Description = $"[red]ERROR: {ex.Message}[/]";
-                            logsTask.Description = $"[red]ERROR: {ex.Message}[/]";
-                        }
-                        finally
-                        {
-                            progressTask.Value = progressTask.MaxValue;
-                            progressTask.Description = "[green]Tests completed[/]";
-                        }
-                    });
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"ERROR: {ex.Message}");
-                Console.WriteLine(ex.StackTrace);
-            }
+                var unitTestRunner = new UnitTestRunner(config, progressReporter);
+                results = await unitTestRunner.RunTestsAsync();
+            });
 
             // Display results
             if (results != null)

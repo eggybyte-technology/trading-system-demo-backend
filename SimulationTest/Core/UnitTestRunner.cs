@@ -204,11 +204,12 @@ namespace SimulationTest.Core
                     Passed = passed,
                     Failed = failed,
                     Skipped = skipped,
-                    LogMessage = logMessage
+                    LogMessage = logMessage,
+                    Timestamp = DateTime.Now
                 });
             }
 
-            // Also log to console
+            // Also log to console for backup
             if (!string.IsNullOrEmpty(logMessage))
             {
                 Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] {logMessage}");

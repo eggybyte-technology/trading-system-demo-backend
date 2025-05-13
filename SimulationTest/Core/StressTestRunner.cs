@@ -177,7 +177,7 @@ namespace SimulationTest.Core
                 // Register users (20% of progress)
                 UpdateProgress("Registering test users...", 10, 0, _userCount);
 
-                var users = await userService.CreateTestUsersAsync(_userCount, verbose: false);
+                var users = await userService.CreateTestUsersAsync(_userCount, verbose: false, _progress);
 
                 if (users.Count == 0)
                 {
@@ -264,7 +264,7 @@ namespace SimulationTest.Core
                             }
                             catch (Exception ex)
                             {
-                                Console.WriteLine($"Error processing orders for user {user.Email}: {ex.Message}");
+                                Console.WriteLine($"Error processing orders for user {user.Username}: {ex.Message}");
                             }
                         }));
                     }
@@ -302,7 +302,40 @@ namespace SimulationTest.Core
                 }
 
                 // Calculate percentiles
-                List<double> percentiles = CalculatePercentiles(latencies);
+                var percentiles = CalculatePercentiles(latencies);
+
+                // Calculate orders per second
+                var ordersPerSecond = elapsedTime.TotalSeconds > 0
+                    ? totalOperations / elapsedTime.TotalSeconds
+                    : 0;
+
+                // Final progress report
+                ReportProgress(
+                    "Test completed",
+                    100,
+                    totalOperations,
+                    totalOperations,
+                    $"Test completed - Total: {totalOperations}, Success: {_successfulRequests}, Failed: {_failedRequests}, Time: {elapsedTime.TotalSeconds:F2}s"
+                );
+
+                // Send final progress update with IsFinal flag
+                if (_progress != null)
+                {
+                    _progress.Report(new TestProgress
+                    {
+                        Message = "Test completed",
+                        Percentage = 100,
+                        Completed = totalOperations,
+                        Total = totalOperations,
+                        Passed = _successfulRequests,
+                        Failed = _failedRequests,
+                        AverageLatency = averageLatency.TotalMilliseconds,
+                        SuccessRate = _successfulRequests > 0 ? (double)_successfulRequests / totalOperations * 100 : 0,
+                        OperationsPerSecond = ordersPerSecond,
+                        LogMessage = $"Test completed - Success: {_successfulRequests}, Failed: {_failedRequests}, Total: {totalOperations}, Time: {elapsedTime.TotalSeconds:F2}s",
+                        IsFinal = true
+                    });
+                }
 
                 return new TestResult
                 {
@@ -317,7 +350,7 @@ namespace SimulationTest.Core
                     StartTime = _startTime,
                     EndTime = _endTime,
                     ElapsedTime = elapsedTime,
-                    OrdersPerSecond = _totalRequests / elapsedTime.TotalSeconds,
+                    OrdersPerSecond = ordersPerSecond,
                     TestFolderPath = testFolderPath
                 };
             }
@@ -377,13 +410,34 @@ namespace SimulationTest.Core
             // Replace any square brackets in the message to avoid markup parsing errors
             string safeMessage = message?.Replace("[", "").Replace("]", "") ?? "";
 
-            _progress?.Report(new TestProgress
+            ReportProgress(safeMessage, percentage, completed, total, null);
+        }
+
+        /// <summary>
+        /// Reports detailed progress information
+        /// </summary>
+        private void ReportProgress(string message, int percentage, int completed, int total, string logMessage)
+        {
+            if (_progress != null)
             {
-                Message = safeMessage,
-                Percentage = percentage,
-                Completed = completed,
-                Total = total
-            });
+                var elapsedTime = DateTime.Now - _startTime;
+                var completedOps = GetCompletedOperations();
+                var successRate = GetCurrentSuccessRate();
+                var avgLatency = GetCurrentAverageLatency();
+                var opsPerSecond = elapsedTime.TotalSeconds > 0 ? completedOps / elapsedTime.TotalSeconds : 0;
+
+                _progress.Report(new TestProgress
+                {
+                    Message = message,
+                    Percentage = percentage,
+                    Completed = completed,
+                    Total = total,
+                    AverageLatency = avgLatency,
+                    SuccessRate = successRate,
+                    OperationsPerSecond = opsPerSecond,
+                    LogMessage = logMessage ?? $"Processing: {completed}/{total}"
+                });
+            }
         }
 
         /// <summary>
@@ -463,8 +517,13 @@ namespace SimulationTest.Core
             // Calculate percentage (from 30% to 90%)
             int progressPercent = 30 + (int)((float)completed / total * 60);
 
-            // Update progress
-            UpdateProgress($"Submitting orders...", progressPercent, completed, total);
+            // Prepare detailed log message
+            string logMessage = $"Submitting orders: {completed}/{total} completed - " +
+                $"Success rate: {GetCurrentSuccessRate():F2}% - " +
+                $"Avg Latency: {GetCurrentAverageLatency():F2}ms";
+
+            // Update progress with detailed stats
+            ReportProgress("Submitting orders...", progressPercent, completed, total, logMessage);
         }
 
         /// <summary>
@@ -486,23 +545,6 @@ namespace SimulationTest.Core
         public TimeSpan Duration { get; set; }
         public int StatusCode { get; set; }
         public Exception Exception { get; set; }
-    }
-
-    /// <summary>
-    /// Represents the progress of a test
-    /// </summary>
-    public class TestProgress
-    {
-        public string Message { get; set; }
-        public int Percentage { get; set; }
-        public int Completed { get; set; }
-        public int Total { get; set; }
-
-        // Additional properties for detailed reporting
-        public int Passed { get; set; } = -1;
-        public int Failed { get; set; } = -1;
-        public int Skipped { get; set; } = -1;
-        public string LogMessage { get; set; }
     }
 
     /// <summary>

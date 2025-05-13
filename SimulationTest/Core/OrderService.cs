@@ -116,21 +116,43 @@ namespace SimulationTest.Core
         /// <param name="consoleOutput">Whether to output to console</param>
         /// <param name="orderProcessedHandler">Event handler for when an order is processed</param>
         public async Task SubmitRandomOrdersAsync(
-            UserCredential user,
+            object user,
             int numOrders,
             StatusContext? ctx,
             bool verbose,
             bool consoleOutput = true,
             EventHandler<(bool success, double latencyMs)>? orderProcessedHandler = null)
         {
+            // Extract relevant information based on user type
+            string userId;
+            string email;
+            string token;
+
+            if (user is UserCredential userCred)
+            {
+                userId = userCred.UserId;
+                email = userCred.Email;
+                token = userCred.Token;
+            }
+            else if (user is LoginResponse loginResp)
+            {
+                userId = loginResp.UserId;
+                email = loginResp.Username;
+                token = loginResp.Token;
+            }
+            else
+            {
+                throw new ArgumentException("User must be either UserCredential or LoginResponse", nameof(user));
+            }
+
             int userOrdersSubmitted = 0;
             int userOrdersSucceeded = 0;
 
-            await LogOrderActionAsync($"Starting random orders for user {user.Email}", verbose, consoleOutput);
+            await LogOrderActionAsync($"Starting random orders for user {email}", verbose, consoleOutput);
 
             if (consoleOutput)
             {
-                AnsiConsole.MarkupLine($"[blue]Starting random orders for {user.Email}[/]");
+                AnsiConsole.MarkupLine($"[blue]Starting random orders for {email}[/]");
             }
 
             for (int i = 0; i < numOrders; i++)
@@ -141,15 +163,15 @@ namespace SimulationTest.Core
                 try
                 {
                     // Get the user-specific HTTP client for trading service
-                    var httpClient = _httpClientFactory.GetUserClient(user.UserId, "trading");
+                    var httpClient = _httpClientFactory.GetUserClient(userId, "trading");
 
                     // Check if authorization header is set correctly
                     var authHeader = httpClient.DefaultRequestHeaders.Authorization;
                     if (authHeader == null || string.IsNullOrEmpty(authHeader.Parameter))
                     {
                         // Re-apply the token if it's missing
-                        _httpClientFactory.SetUserAuthToken(user.UserId, user.Token);
-                        await LogOrderActionAsync($"Re-applying token for user {user.Email} before order submission", verbose, consoleOutput);
+                        _httpClientFactory.SetUserAuthToken(userId, token);
+                        await LogOrderActionAsync($"Re-applying token for user {email} before order submission", verbose, consoleOutput);
                     }
 
                     // Generate random order
@@ -157,7 +179,7 @@ namespace SimulationTest.Core
                     var orderRequest = SimulationStrategies.GenerateRandomOrder(symbol, _priceRanges);
 
                     // Log detailed order information
-                    await LogOrderActionAsync($"Creating order #{orderNumber} for user {user.Email} - Symbol: {orderRequest.Symbol}, Side: {orderRequest.Side}, Type: {orderRequest.Type}, Price: {orderRequest.Price}, Quantity: {orderRequest.Quantity}", verbose, consoleOutput);
+                    await LogOrderActionAsync($"Creating order #{orderNumber} for user {email} - Symbol: {orderRequest.Symbol}, Side: {orderRequest.Side}, Type: {orderRequest.Type}, Price: {orderRequest.Price}, Quantity: {orderRequest.Quantity}", verbose, consoleOutput);
 
                     // Log the order being submitted - fix markup issue by not trying to style the order type
                     if (consoleOutput)
@@ -173,7 +195,7 @@ namespace SimulationTest.Core
                     _latencies.Add(latencyMs);
 
                     // Process response
-                    await ProcessResponseAsync(response, orderRequest, user, verbose, consoleOutput);
+                    await ProcessResponseAsync(response, orderRequest, userId, email, verbose, consoleOutput);
 
                     // Update counters based on success/failure
                     bool isSuccess = response.IsSuccessStatusCode;
@@ -224,11 +246,11 @@ namespace SimulationTest.Core
                 ? (double)userOrdersSucceeded / userOrdersSubmitted * 100
                 : 0;
 
-            await LogOrderActionAsync($"Completed random orders for user {user.Email}: {userOrdersSucceeded}/{userOrdersSubmitted} ({userSuccessRate:F1}% success rate)", verbose, consoleOutput);
+            await LogOrderActionAsync($"Completed random orders for user {email}: {userOrdersSucceeded}/{userOrdersSubmitted} ({userSuccessRate:F1}% success rate)", verbose, consoleOutput);
 
             if (consoleOutput)
             {
-                AnsiConsole.MarkupLine($"[blue]Completed random orders for {user.Email}:[/] {userOrdersSucceeded}/{userOrdersSubmitted} " +
+                AnsiConsole.MarkupLine($"[blue]Completed random orders for {email}:[/] {userOrdersSucceeded}/{userOrdersSubmitted} " +
                                     $"({userSuccessRate:F1}% success rate)");
             }
         }
@@ -383,38 +405,33 @@ namespace SimulationTest.Core
         private async Task ProcessResponseAsync(
             HttpResponseMessage response,
             CreateOrderRequest orderRequest,
-            UserCredential user,
+            string userId,
+            string email,
             bool verbose,
             bool consoleOutput = true)
         {
-            // Read response content
             string content = await response.Content.ReadAsStringAsync();
 
-            // Log response to file for all requests
-            await LogResponseAsync(
-                $"=== Order Response ===\n" +
-                $"Timestamp: {DateTime.Now:yyyy-MM-dd HH:mm:ss}\n" +
-                $"User: {user.Email} (UserId: {user.UserId})\n" +
-                $"Order: Symbol: {orderRequest.Symbol}, Side: {orderRequest.Side}, Type: {orderRequest.Type}\n" +
-                $"Status: {response.StatusCode}\n" +
-                $"Response: {content}\n");
+            // Log API response
+            await LogResponseAsync($"Response for {email} - Status: {response.StatusCode}\nContent: {content}");
 
-            // Additionally log it to console if verbose and it's not a success
-            if (!response.IsSuccessStatusCode)
+            if (response.IsSuccessStatusCode)
             {
-                await LogOrderActionAsync($"Order failed for user {user.Email} - Status: {response.StatusCode}, Response: {content}", verbose, consoleOutput);
+                await LogOrderActionAsync($"Order created successfully for {email} - {orderRequest.Side} {orderRequest.Quantity} {orderRequest.Symbol} @ {orderRequest.Price}", verbose, consoleOutput);
 
-                if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                if (consoleOutput)
                 {
-                    await LogOrderActionAsync($"Unauthorized error detected - Token: {user.Token.Substring(0, Math.Min(20, user.Token.Length))}...", verbose, consoleOutput);
+                    AnsiConsole.MarkupLine($"[green]Order succeeded:[/] {orderRequest.Side} {orderRequest.Quantity} {orderRequest.Symbol} @ {orderRequest.Price}");
                 }
-
-                // Don't increment the failure count here, it's already done in the calling methods
             }
             else
             {
-                await LogOrderActionAsync($"Order succeeded for user {user.Email} - Status: {response.StatusCode}", verbose, consoleOutput);
-                // Don't increment the success count here, it's already done in the calling methods
+                await LogOrderActionAsync($"Order creation failed for {email} - Status: {response.StatusCode}, Content: {content}", verbose, consoleOutput);
+
+                if (consoleOutput)
+                {
+                    AnsiConsole.MarkupLine($"[red]Order failed:[/] {orderRequest.Side} {orderRequest.Quantity} {orderRequest.Symbol} @ {orderRequest.Price} - {response.StatusCode}");
+                }
             }
         }
 
