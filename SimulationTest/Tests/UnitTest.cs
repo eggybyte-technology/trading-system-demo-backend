@@ -2,7 +2,6 @@ using System.Diagnostics;
 using CommonLib.Models.Account;
 using CommonLib.Models.Identity;
 using CommonLib.Models.Market;
-using CommonLib.Models.Notification;
 using CommonLib.Models.Trading;
 using CommonLib.Api;
 using SimulationTest.Core;
@@ -18,8 +17,6 @@ namespace SimulationTest.Tests
         private readonly CommonLib.Api.AccountService _accountService;
         private readonly CommonLib.Api.MarketDataService _marketDataService;
         private readonly CommonLib.Api.TradingService _tradingService;
-        private readonly CommonLib.Api.RiskService _riskService;
-        private readonly CommonLib.Api.NotificationService _notificationService;
         private readonly TestLogger _logger;
         private readonly ReportGenerator _reportGenerator;
         private readonly List<OperationResult> _results = new();
@@ -37,8 +34,6 @@ namespace SimulationTest.Tests
             CommonLib.Api.AccountService accountService,
             CommonLib.Api.MarketDataService marketDataService,
             CommonLib.Api.TradingService tradingService,
-            CommonLib.Api.RiskService riskService,
-            CommonLib.Api.NotificationService notificationService,
             TestLogger logger,
             ReportGenerator reportGenerator)
         {
@@ -46,8 +41,6 @@ namespace SimulationTest.Tests
             _accountService = accountService;
             _marketDataService = marketDataService;
             _tradingService = tradingService;
-            _riskService = riskService;
-            _notificationService = notificationService;
             _logger = logger;
             _reportGenerator = reportGenerator;
 
@@ -90,18 +83,6 @@ namespace SimulationTest.Tests
             _testDependencies["CancelOrder"] = new List<string> { "CreateOrder" };
             _testDependencies["GetOrderHistory"] = new List<string> { "Login" };
             _testDependencies["GetTradeHistory"] = new List<string> { "Login" };
-
-            // Risk Service test dependencies
-            _testDependencies["GetRiskStatus"] = new List<string> { "Login" };
-            _testDependencies["GetTradingLimits"] = new List<string> { "Login" };
-            _testDependencies["GetRiskAlerts"] = new List<string> { "Login" };
-            _testDependencies["GetRiskRules"] = new List<string> { "Login" };
-
-            // Notification Service test dependencies
-            _testDependencies["GetNotificationSettings"] = new List<string> { "Login" };
-            _testDependencies["UpdateNotificationSettings"] = new List<string> { "GetNotificationSettings" };
-            _testDependencies["GetNotifications"] = new List<string> { "Login" };
-            _testDependencies["MarkNotificationAsRead"] = new List<string> { "GetNotifications" };
         }
 
         /// <summary>
@@ -150,7 +131,7 @@ namespace SimulationTest.Tests
             _logger.Info("Starting unit test for all services");
 
             // Approximately count the total operations to show progress
-            int totalOperations = 25; // Estimated number of operations
+            int totalOperations = 17; // 更新为移除Risk和Notification服务后的操作数量
             var statusBar = new StatusBar(totalOperations);
             statusBar.Start();
 
@@ -163,8 +144,6 @@ namespace SimulationTest.Tests
                 var marketDataTest = new MarketDataServiceTest(_marketDataService, _logger, statusBar, _context);
                 var accountTest = new AccountServiceTest(_accountService, _logger, statusBar, _context);
                 var tradingTest = new TradingServiceTest(_tradingService, _logger, statusBar, _context);
-                var riskTest = new RiskServiceTest(_riskService, _logger, statusBar, _context);
-                var notificationTest = new NotificationServiceTest(_notificationService, _logger, statusBar, _context);
 
                 // Step 1: Identity Service Tests
                 _logger.Info("Step 1: Testing Identity Service");
@@ -498,128 +477,6 @@ namespace SimulationTest.Tests
                 }
 
                 _results.AddRange(tradingTest.GetResults());
-
-                // Step 5: Risk Service Tests
-                _logger.Info("Step 5: Testing Risk Service");
-
-                if (CanRunTest("GetRiskStatus"))
-                {
-                    try
-                    {
-                        await riskTest.TestGetRiskStatusAsync();
-                        RecordTestResult("GetRiskStatus", true);
-                    }
-                    catch (Exception ex)
-                    {
-                        RecordTestResult("GetRiskStatus", false);
-                        _logger.Error($"GetRiskStatus test failed: {ex.Message}");
-                    }
-                }
-
-                if (CanRunTest("GetTradingLimits"))
-                {
-                    try
-                    {
-                        await riskTest.TestGetTradingLimitsAsync();
-                        RecordTestResult("GetTradingLimits", true);
-                    }
-                    catch (Exception ex)
-                    {
-                        RecordTestResult("GetTradingLimits", false);
-                        _logger.Error($"GetTradingLimits test failed: {ex.Message}");
-                    }
-                }
-
-                if (CanRunTest("GetRiskAlerts"))
-                {
-                    try
-                    {
-                        await riskTest.TestGetRiskAlertsAsync();
-                        RecordTestResult("GetRiskAlerts", true);
-                    }
-                    catch (Exception ex)
-                    {
-                        RecordTestResult("GetRiskAlerts", false);
-                        _logger.Error($"GetRiskAlerts test failed: {ex.Message}");
-                    }
-                }
-
-                if (CanRunTest("GetRiskRules"))
-                {
-                    try
-                    {
-                        await riskTest.TestGetRiskRulesAsync();
-                        RecordTestResult("GetRiskRules", true);
-                    }
-                    catch (Exception ex)
-                    {
-                        RecordTestResult("GetRiskRules", false);
-                        _logger.Error($"GetRiskRules test failed: {ex.Message}");
-                    }
-                }
-
-                _results.AddRange(riskTest.GetResults());
-
-                // Step 6: Notification Service Tests
-                _logger.Info("Step 6: Testing Notification Service");
-
-                if (CanRunTest("GetNotificationSettings"))
-                {
-                    try
-                    {
-                        await notificationTest.TestGetNotificationSettingsAsync();
-                        RecordTestResult("GetNotificationSettings", true);
-                    }
-                    catch (Exception ex)
-                    {
-                        RecordTestResult("GetNotificationSettings", false);
-                        _logger.Error($"GetNotificationSettings test failed: {ex.Message}");
-                    }
-                }
-
-                if (CanRunTest("UpdateNotificationSettings"))
-                {
-                    try
-                    {
-                        await notificationTest.TestUpdateNotificationSettingsAsync();
-                        RecordTestResult("UpdateNotificationSettings", true);
-                    }
-                    catch (Exception ex)
-                    {
-                        RecordTestResult("UpdateNotificationSettings", false);
-                        _logger.Error($"UpdateNotificationSettings test failed: {ex.Message}");
-                    }
-                }
-
-                if (CanRunTest("GetNotifications"))
-                {
-                    try
-                    {
-                        await notificationTest.TestGetNotificationsAsync();
-                        RecordTestResult("GetNotifications", true);
-                    }
-                    catch (Exception ex)
-                    {
-                        RecordTestResult("GetNotifications", false);
-                        _logger.Error($"GetNotifications test failed: {ex.Message}");
-                    }
-                }
-
-                if (CanRunTest("MarkNotificationAsRead") && !string.IsNullOrEmpty(_context.NotificationId))
-                {
-                    try
-                    {
-                        await notificationTest.TestMarkNotificationAsReadAsync();
-                        RecordTestResult("MarkNotificationAsRead", true);
-                    }
-                    catch (Exception ex)
-                    {
-                        RecordTestResult("MarkNotificationAsRead", false);
-                        _logger.Error($"MarkNotificationAsRead test failed: {ex.Message}");
-                    }
-                }
-
-                _results.AddRange(notificationTest.GetResults());
 
                 // Finish test
                 stopwatch.Stop();

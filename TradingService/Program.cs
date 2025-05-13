@@ -60,6 +60,9 @@ builder.Services.AddScoped<IHttpClientService, HttpClientService>();
 // Register Trading-specific services
 builder.Services.AddScoped<IOrderService, OrderService>();
 
+// Add WebSocketService
+builder.Services.AddSingleton<IWebSocketService, WebSocketService>();
+
 // ======================================================
 // JWT AUTHENTICATION CONFIGURATION
 // ======================================================

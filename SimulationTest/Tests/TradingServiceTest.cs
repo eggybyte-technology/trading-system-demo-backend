@@ -44,7 +44,7 @@ namespace SimulationTest.Tests
                 {
                     Symbol = _context.TestSymbol,
                     Side = OrderSide.BUY.ToString(),
-                    Type = OrderType.Limit.ToString(),
+                    Type = OrderType.LIMIT.ToString(),
                     Price = 1000,
                     Quantity = 0.1m,
                     TimeInForce = TimeInForce.GTC.ToString()

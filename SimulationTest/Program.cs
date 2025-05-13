@@ -5,6 +5,7 @@ using CommonLib.Api;
 using SimulationTest.Tests;
 using SimulationTest.Core;
 using System.Reflection;
+using Spectre.Console;
 
 namespace SimulationTest
 {
@@ -28,7 +29,7 @@ namespace SimulationTest
             // Setup DI
             var serviceProvider = new ServiceCollection()
                 .AddSingleton<IConfiguration>(configuration)
-                .AddTradingSystemServices(loggerAdapter) // Use the extension method with our logger
+                .AddReducedTradingSystemServices(loggerAdapter) // 使用自定义方法，移除RiskService和NotificationService
                 .AddSingleton(testLogger)  // Use the singleton instance
                 .AddSingleton<ReportGenerator>()
                 .AddTransient<StressTest>()
@@ -39,68 +40,115 @@ namespace SimulationTest
             Directory.CreateDirectory("logs");
 
             // Welcome message
-            Console.Clear();
-            Console.WriteLine("=======================================================");
-            Console.WriteLine("||          TRADING SYSTEM SIMULATION TESTS          ||");
-            Console.WriteLine("=======================================================");
-            Console.WriteLine("Version: 1.0.0");
-            Console.WriteLine($"Time: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-            Console.WriteLine($"Process ID: {Environment.ProcessId}");
-            Console.WriteLine("=======================================================");
-            Console.WriteLine();
+            AnsiConsole.Clear();
+
+            var rule = new Rule("[yellow]TRADING SYSTEM SIMULATION TESTS[/]");
+            rule.Style = Style.Parse("yellow dim");
+            // rule.Alignment = Justify.Center;
+
+            AnsiConsole.Write(rule);
+
+            var table = new Table();
+            table.Border(TableBorder.None);
+            table.AddColumn(new TableColumn("Info").Centered());
+
+            var version = Assembly.GetExecutingAssembly().GetName().Version;
+
+            table.AddRow($"[blue]Version:[/] [green]{version?.ToString() ?? "1.0.0"}[/]");
+            table.AddRow($"[blue]Time:[/] [green]{DateTime.Now:yyyy-MM-dd HH:mm:ss}[/]");
+            table.AddRow($"[blue]Process ID:[/] [green]{Environment.ProcessId}[/]");
+            table.Alignment(Justify.Center);
+
+            AnsiConsole.Write(table);
+
+            AnsiConsole.Write(rule);
+            AnsiConsole.WriteLine();
 
             while (true)
             {
-                Console.WriteLine("Please select a test to run:");
-                Console.WriteLine("1. Stress Test");
-                Console.WriteLine("2. Unit Test");
-                Console.WriteLine("0. Exit");
-                Console.Write("\nYour choice: ");
-
-                var choice = Console.ReadLine();
+                var choice = AnsiConsole.Prompt(
+                    new SelectionPrompt<string>()
+                        .Title("Please select a test to run:")
+                        .PageSize(10)
+                        .HighlightStyle(new Style(foreground: Color.Green))
+                        .AddChoices(new[] {
+                            "1. Stress Test",
+                            "2. Unit Test",
+                            "0. Exit"
+                        }));
 
                 switch (choice)
                 {
-                    case "1":
+                    case "1. Stress Test":
                         await RunStressTest(serviceProvider);
                         break;
-                    case "2":
+                    case "2. Unit Test":
                         await RunUnitTest(serviceProvider);
                         break;
-                    case "0":
-                        Console.WriteLine("Exiting...");
+                    case "0. Exit":
+                        AnsiConsole.MarkupLine("[yellow]Exiting...[/]");
                         return;
                     default:
-                        Console.WriteLine("Invalid choice. Please try again.");
+                        AnsiConsole.MarkupLine("[red]Invalid choice. Please try again.[/]");
                         break;
                 }
 
-                Console.WriteLine("\nPress any key to return to the main menu...");
+                AnsiConsole.WriteLine();
+                AnsiConsole.MarkupLine("[blue]Press any key to return to the main menu...[/]");
                 Console.ReadKey();
-                Console.Clear();
+                AnsiConsole.Clear();
             }
         }
 
         private static async Task RunStressTest(ServiceProvider serviceProvider)
         {
-            Console.Clear();
-            Console.WriteLine("=======================================================");
-            Console.WriteLine("||                   STRESS TEST                     ||");
-            Console.WriteLine("=======================================================");
-            Console.WriteLine();
+            AnsiConsole.Clear();
+
+            var title = new FigletText("Stress Test")
+                .LeftJustified()
+                .Color(Color.Yellow);
+
+            AnsiConsole.Write(title);
+            AnsiConsole.WriteLine();
 
             // Get configuration for stress test
-            Console.Write("Number of users to register (default: 10): ");
-            var userCountInput = Console.ReadLine();
-            int userCount = string.IsNullOrWhiteSpace(userCountInput) ? 10 : int.Parse(userCountInput);
+            var userCount = AnsiConsole.Prompt(
+                new TextPrompt<int>("Number of users to register [green](default: 10)[/] [yellow](max: 100)[/]:")
+                    .DefaultValue(10)
+                    .ValidationErrorMessage("[red]Please enter a valid number[/]")
+                    .Validate(count =>
+                    {
+                        if (count <= 0)
+                            return ValidationResult.Error("[red]User count must be greater than 0[/]");
+                        if (count > 100)
+                            return ValidationResult.Error("[red]User count cannot exceed 100[/]");
+                        return ValidationResult.Success();
+                    })
+                    .ShowDefaultValue());
 
-            Console.Write("Number of orders per user (default: 1000): ");
-            var orderCountInput = Console.ReadLine();
-            int orderCount = string.IsNullOrWhiteSpace(orderCountInput) ? 1000 : int.Parse(orderCountInput);
+            var orderCount = AnsiConsole.Prompt(
+                new TextPrompt<int>("Number of orders per user [green](default: 1000)[/] [yellow](max: 10000)[/]:")
+                    .DefaultValue(1000)
+                    .ValidationErrorMessage("[red]Please enter a valid number[/]")
+                    .Validate(count =>
+                    {
+                        if (count <= 0)
+                            return ValidationResult.Error("[red]Order count must be greater than 0[/]");
+                        if (count > 10000)
+                            return ValidationResult.Error("[red]Order count cannot exceed 10000[/]");
+                        return ValidationResult.Success();
+                    })
+                    .ShowDefaultValue());
 
-            Console.WriteLine("\nStarting stress test...");
-            Console.WriteLine($"Registering {userCount} users and creating {orderCount} orders per user");
-            Console.WriteLine();
+            AnsiConsole.WriteLine();
+
+            // Display info panel
+            var infoPanel = new Panel(new Markup($"[yellow]Starting stress test with:[/]\n[green]- {userCount}[/] users\n[green]- {orderCount}[/] orders per user\n[green]- {userCount}[/] parallel tasks (one per user)"));
+            infoPanel.Border = BoxBorder.Rounded;
+            infoPanel.Padding = new Padding(1, 0, 1, 0);
+
+            AnsiConsole.Write(infoPanel);
+            AnsiConsole.WriteLine();
 
             // Get the stress test service and run the test
             var stressTest = serviceProvider.GetRequiredService<StressTest>();
@@ -109,19 +157,66 @@ namespace SimulationTest
 
         private static async Task RunUnitTest(ServiceProvider serviceProvider)
         {
-            Console.Clear();
-            Console.WriteLine("=======================================================");
-            Console.WriteLine("||                   UNIT TEST                       ||");
-            Console.WriteLine("=======================================================");
-            Console.WriteLine();
+            AnsiConsole.Clear();
 
-            Console.WriteLine("Starting unit test...");
-            Console.WriteLine("Testing all service methods in sequence");
-            Console.WriteLine();
+            var title = new FigletText("Unit Test")
+                .LeftJustified()
+                .Color(Color.Yellow);
+
+            AnsiConsole.Write(title);
+            AnsiConsole.WriteLine();
+
+            var infoPanel = new Panel(new Markup("[yellow]Starting unit test[/]\nTesting all service methods in sequence"));
+            infoPanel.Border = BoxBorder.Rounded;
+            infoPanel.Padding = new Padding(1, 0, 1, 0);
+
+            AnsiConsole.Write(infoPanel);
+            AnsiConsole.WriteLine();
 
             // Get the unit test service and run the test
             var unitTest = serviceProvider.GetRequiredService<UnitTest>();
             await unitTest.RunAsync();
+        }
+    }
+
+    /// <summary>
+    /// Extension methods for registering required API service clients for the simulation tests
+    /// </summary>
+    public static class ServiceExtensions
+    {
+        /// <summary>
+        /// Registers only the required trading system API clients with the service collection and a custom logger
+        /// 移除RiskService和NotificationService
+        /// </summary>
+        /// <param name="services">The service collection</param>
+        /// <param name="logger">The logger to use for all services</param>
+        /// <returns>The service collection for chaining</returns>
+        public static IServiceCollection AddReducedTradingSystemServices(this IServiceCollection services, ILogger logger)
+        {
+            services.AddHttpClient();
+
+            // Register needed services with the custom logger
+            services.AddScoped(sp => new IdentityService(
+                sp.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>(),
+                logger));
+
+            services.AddScoped(sp => new AccountService(
+                sp.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>(),
+                logger));
+
+            services.AddScoped(sp => new MarketDataService(
+                sp.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>(),
+                logger));
+
+            services.AddScoped(sp => new TradingService(
+                sp.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>(),
+                logger));
+
+            services.AddScoped(sp => new MatchMakingService(
+                sp.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>(),
+                logger));
+
+            return services;
         }
     }
 

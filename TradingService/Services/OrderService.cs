@@ -8,6 +8,7 @@ using Microsoft.Extensions.Configuration;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using CommonLib.Api;
+using System.Net.Http.Json;
 
 namespace TradingService.Services
 {
@@ -22,6 +23,8 @@ namespace TradingService.Services
         private readonly string _accountServiceBaseUrl;
         private readonly CommonLib.Api.AccountService _accountService;
         private readonly string _serviceAuthToken;
+        private readonly IConfiguration _configuration;
+        private readonly IWebSocketService _webSocketService;
 
         /// <summary>
         /// Initializes a new instance of the OrderService
@@ -31,18 +34,22 @@ namespace TradingService.Services
         /// <param name="httpClient">HTTP client service for communicating with other services</param>
         /// <param name="configuration">Application configuration</param>
         /// <param name="accountService">Account service client for API calls</param>
+        /// <param name="webSocketService">WebSocket service for real-time updates</param>
         public OrderService(
             MongoDbConnectionFactory dbFactory,
             ILoggerService logger,
             IHttpClientService httpClient,
             IConfiguration configuration,
-            CommonLib.Api.AccountService accountService)
+            CommonLib.Api.AccountService accountService,
+            IWebSocketService webSocketService)
         {
             _dbFactory = dbFactory;
             _logger = logger;
             _httpClient = httpClient;
             _accountServiceBaseUrl = configuration["ServiceUrls:AccountService"] ?? "http://account:8080";
             _accountService = accountService;
+            _configuration = configuration;
+            _webSocketService = webSocketService;
 
             // Get system token for inter-service communication
             var jwtSection = configuration.GetSection("JwtSettings");
@@ -82,9 +89,8 @@ namespace TradingService.Services
                 var orderCollection = _dbFactory.GetCollection<Order>();
                 await orderCollection.InsertOneAsync(order);
 
-                // In a real implementation, we would notify the matching engine to process the order
-                // This is a simplified placeholder
-                // await NotifyMatchingEngine(order);
+                // Notify MarketDataService to update OrderBook
+                await NotifyOrderBookUpdate(order);
 
                 return order;
             }
@@ -603,6 +609,63 @@ namespace TradingService.Services
         {
             var validValues = new[] { "GTC", "IOC", "FOK" };
             return validValues.Contains(timeInForce);
+        }
+
+        /// <summary>
+        /// Notifies MarketDataService to update the OrderBook with the new order
+        /// </summary>
+        /// <param name="order">The order that was created</param>
+        private async Task NotifyOrderBookUpdate(Order order)
+        {
+            try
+            {
+                // Create a PriceLevel object from the order
+                var priceLevel = new CommonLib.Models.Market.PriceLevel
+                {
+                    Price = order.Price,
+                    Quantity = order.OriginalQuantity - order.ExecutedQuantity
+                };
+
+                // Prepare WebSocketDepthData for notification
+                var depthData = new CommonLib.Models.Market.WebSocketDepthData
+                {
+                    Symbol = order.Symbol
+                };
+
+                // Add the order to the appropriate side (bids or asks)
+                if (order.Side.ToUpper() == "BUY")
+                {
+                    depthData.Bids = new List<List<decimal>> { new List<decimal> { priceLevel.Price, priceLevel.Quantity } };
+                    depthData.Asks = new List<List<decimal>>();
+                }
+                else // SELL
+                {
+                    depthData.Bids = new List<List<decimal>>();
+                    depthData.Asks = new List<List<decimal>> { new List<decimal> { priceLevel.Price, priceLevel.Quantity } };
+                }
+
+                // Use MarketDataService API client to update the OrderBook
+                var marketDataService = new CommonLib.Api.MarketDataService(_configuration);
+                var response = await marketDataService.UpdateOrderBookAsync(_serviceAuthToken, depthData);
+
+                if (!response.Success)
+                {
+                    _logger.LogWarning($"Failed to update OrderBook for order {order.Id}: {response.Message}");
+                }
+                else
+                {
+                    _logger.LogInformation($"Successfully updated OrderBook for order {order.Id}");
+                }
+
+                // Publish WebSocket update for real-time clients
+                await _webSocketService.PublishDepthUpdate(order.Symbol, depthData);
+                _logger.LogInformation($"Published OrderBook update for {order.Symbol} via WebSocket");
+            }
+            catch (Exception ex)
+            {
+                // Log the error but don't fail the order creation
+                _logger.LogError($"Error notifying OrderBook update: {ex.Message}");
+            }
         }
 
         #endregion

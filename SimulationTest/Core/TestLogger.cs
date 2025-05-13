@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text;
 using System.IO;
+using Spectre.Console;
 
 namespace SimulationTest.Core
 {
@@ -46,7 +47,19 @@ namespace SimulationTest.Core
                 file.WriteLine();
             }
 
-            Info($"Log directory created at: {dirPath}");
+            // Use Spectre.Console for richer display
+            var panel = new Panel($"Log directory created at: [green]{dirPath}[/]")
+            {
+                Border = BoxBorder.Rounded,
+                Padding = new Padding(1, 0, 1, 0)
+            };
+            panel.BorderStyle = new Style(foreground: Color.Blue);
+
+            AnsiConsole.Write(panel);
+
+            // Still log the message to the file without formatting
+            LogMessage(LogLevel.Info, $"Log directory created at: {dirPath}", logToConsole: false);
+
             return dirPath;
         }
 
@@ -225,7 +238,7 @@ namespace SimulationTest.Core
             {
                 lock (_consoleLock)
                 {
-                    WriteColoredLogToConsole(entry);
+                    WriteSpectreLogToConsole(entry);
                 }
             }
         }
@@ -239,13 +252,38 @@ namespace SimulationTest.Core
         }
 
         /// <summary>
-        /// Writes a colored log entry to the console
+        /// Writes a colored log entry to the console using Spectre.Console
         /// </summary>
-        private void WriteColoredLogToConsole(LogEntry entry)
+        private void WriteSpectreLogToConsole(LogEntry entry)
         {
-            Console.ForegroundColor = GetColorForLogLevel(entry.Level);
-            Console.WriteLine(FormatLogEntry(entry));
-            Console.ResetColor();
+            var timestamp = $"[grey][[{entry.Timestamp:HH:mm:ss.fff}]][/]";
+            var level = GetSpectreLogLevelText(entry.Level);
+            var message = entry.Message;
+
+            // If message contains newlines, indent them properly
+            if (message.Contains('\n'))
+            {
+                var lines = message.Split('\n');
+                message = string.Join("\n   ", lines);
+            }
+
+            AnsiConsole.MarkupLine($"{timestamp} {level} {message}");
+        }
+
+        /// <summary>
+        /// Gets the colored log level text for Spectre.Console
+        /// </summary>
+        private string GetSpectreLogLevelText(LogLevel level)
+        {
+            return level switch
+            {
+                LogLevel.Info => "[blue][[INFO]][/]",
+                LogLevel.Warning => "[yellow][[WARN]][/]",
+                LogLevel.Error => "[red][[ERROR]][/]",
+                LogLevel.Success => "[green][[SUCCESS]][/]",
+                LogLevel.Debug => "[grey][[DEBUG]][/]",
+                _ => "[blue][[INFO]][/]"
+            };
         }
 
         /// <summary>
@@ -255,7 +293,7 @@ namespace SimulationTest.Core
         {
             return level switch
             {
-                LogLevel.Info => ConsoleColor.White,
+                LogLevel.Info => ConsoleColor.Cyan,
                 LogLevel.Warning => ConsoleColor.Yellow,
                 LogLevel.Error => ConsoleColor.Red,
                 LogLevel.Success => ConsoleColor.Green,
@@ -265,7 +303,7 @@ namespace SimulationTest.Core
         }
 
         /// <summary>
-        /// Get all logs entries for the test run
+        /// Gets all log entries
         /// </summary>
         public List<LogEntry> GetAllLogs()
         {
@@ -273,7 +311,7 @@ namespace SimulationTest.Core
         }
 
         /// <summary>
-        /// Log entry type with timestamp, level and message
+        /// Entry in the log
         /// </summary>
         public class LogEntry
         {
@@ -284,7 +322,7 @@ namespace SimulationTest.Core
         }
 
         /// <summary>
-        /// Log levels for entries
+        /// Log level
         /// </summary>
         public enum LogLevel
         {

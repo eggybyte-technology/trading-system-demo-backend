@@ -1,10 +1,11 @@
 using System.Diagnostics;
 using System.Text;
+using Spectre.Console;
 
 namespace SimulationTest.Core
 {
     /// <summary>
-    /// Dynamic status bar that displays test progress and statistics
+    /// Dynamic status bar that displays test progress and statistics using Spectre.Console
     /// </summary>
     public class StatusBar
     {
@@ -15,8 +16,9 @@ namespace SimulationTest.Core
         private readonly int _totalOperations;
         private int _completedOperations;
         private readonly object _lock = new();
-        private readonly int _statusBarWidth;
-        private readonly int _originalTop;
+        private bool _isRunning = false;
+        private ProgressTask _progressTask;
+        private ManualResetEvent _completionEvent = new ManualResetEvent(false);
 
         /// <summary>
         /// Creates a new status bar
@@ -30,13 +32,9 @@ namespace SimulationTest.Core
             _stopwatch = new Stopwatch();
             _totalOperations = totalOperations;
             _completedOperations = 0;
-            _statusBarWidth = Console.WindowWidth - 10;
-            _originalTop = Console.CursorTop;
 
-            // Reserve lines for the status bar
-            Console.WriteLine();
-            Console.WriteLine();
-            Console.WriteLine();
+            // Reserve a line for the progress display
+            AnsiConsole.WriteLine();
         }
 
         /// <summary>
@@ -45,7 +43,59 @@ namespace SimulationTest.Core
         public void Start()
         {
             _stopwatch.Start();
-            Update();
+            _isRunning = true;
+
+            // Run the progress display in a separate thread to avoid blocking
+            Task.Run(() =>
+            {
+                AnsiConsole.Progress()
+                    .AutoClear(false)
+                    .HideCompleted(false)
+                    .Columns(new ProgressColumn[]
+                    {
+                        new SpinnerColumn(),
+                        new TaskDescriptionColumn(),
+                        new ProgressBarColumn
+                        {
+                            CompletedStyle = new Style(foreground: Color.Green),
+                            FinishedStyle = new Style(foreground: Color.Green),
+                            IndeterminateStyle = new Style(foreground: Color.Yellow)
+                        },
+                        new PercentageColumn(),
+                        new RemainingTimeColumn(),
+                        new ElapsedTimeColumn()
+                    })
+                    .Start(ctx =>
+                    {
+                        _progressTask = ctx.AddTask("[green]Testing Progress[/]", maxValue: _totalOperations);
+
+                        // Update the progress bar until test completes
+                        while (_isRunning)
+                        {
+                            UpdateProgressTask();
+                            Thread.Sleep(100);  // Update every 100ms
+                        }
+
+                        // Ensure 100% is displayed at the end
+                        _progressTask.Value = _totalOperations;
+                        _progressTask.Description = $"[green]Testing Complete[/] - Success: {_successCount} | Failures: {_failureCount} | Avg Latency: {GetAverageLatency():F2}ms | RPS: {GetRequestsPerSecond():F2}";
+
+                        // Signal that the progress has been updated to completion
+                        _completionEvent.Set();
+                    });
+            });
+        }
+
+        private void UpdateProgressTask()
+        {
+            lock (_lock)
+            {
+                if (_progressTask != null)
+                {
+                    _progressTask.Value = Math.Min(_completedOperations, _totalOperations);
+                    _progressTask.Description = $"[green]Testing Progress[/] - Success: {_successCount} | Failures: {_failureCount} | Avg Latency: {GetAverageLatency():F2}ms | RPS: {GetRequestsPerSecond():F2}";
+                }
+            }
         }
 
         /// <summary>
@@ -59,7 +109,6 @@ namespace SimulationTest.Core
                 _successCount++;
                 _totalLatencyMs += latencyMs;
                 _completedOperations++;
-                Update();
             }
         }
 
@@ -72,55 +121,14 @@ namespace SimulationTest.Core
             {
                 _failureCount++;
                 _completedOperations++;
-                Update();
             }
         }
 
-        /// <summary>
-        /// Update the status bar display
-        /// </summary>
-        private void Update()
-        {
-            int originalTop = Console.CursorTop;
-            int originalLeft = Console.CursorLeft;
+        private double GetAverageLatency() => _successCount > 0 ? (double)_totalLatencyMs / _successCount : 0;
 
-            // Update metrics
-            double averageLatency = _successCount > 0 ? (double)_totalLatencyMs / _successCount : 0;
-            double requestsPerSecond = _stopwatch.ElapsedMilliseconds > 0
-                ? _successCount / (_stopwatch.Elapsed.TotalSeconds)
-                : 0;
-            double percentComplete = (double)_completedOperations / _totalOperations * 100;
-            int progressBarFill = (int)Math.Round(percentComplete * _statusBarWidth / 100);
-
-            // Build status bar
-            var statsLine = $"Success: {_successCount} | Failures: {_failureCount} | Avg Latency: {averageLatency:F2}ms | RPS: {requestsPerSecond:F2}";
-            var progressBar = new StringBuilder();
-            progressBar.Append('[');
-            progressBar.Append('=', progressBarFill);
-            if (progressBarFill < _statusBarWidth)
-                progressBar.Append('>');
-            progressBar.Append(' ', _statusBarWidth - progressBarFill - (progressBarFill < _statusBarWidth ? 1 : 0));
-            progressBar.Append(']');
-            progressBar.Append($" {percentComplete:F2}% - {TimeSpan.FromMilliseconds(_stopwatch.ElapsedMilliseconds):hh\\:mm\\:ss}");
-
-            // Save cursor and move to status bar position
-            Console.CursorVisible = false;
-            Console.SetCursorPosition(0, _originalTop);
-
-            // Clear and redraw status lines
-            Console.Write(new string(' ', Console.WindowWidth));
-            Console.SetCursorPosition(0, _originalTop);
-            Console.WriteLine(statsLine);
-
-            Console.SetCursorPosition(0, _originalTop + 1);
-            Console.Write(new string(' ', Console.WindowWidth));
-            Console.SetCursorPosition(0, _originalTop + 1);
-            Console.WriteLine(progressBar.ToString());
-
-            // Restore cursor
-            Console.SetCursorPosition(originalLeft, originalTop);
-            Console.CursorVisible = true;
-        }
+        private double GetRequestsPerSecond() => _stopwatch.ElapsedMilliseconds > 0
+            ? _successCount / (_stopwatch.Elapsed.TotalSeconds)
+            : 0;
 
         /// <summary>
         /// Stop the status bar and return statistics
@@ -129,10 +137,34 @@ namespace SimulationTest.Core
         public TestStatistics Stop()
         {
             _stopwatch.Stop();
+            _isRunning = false;
 
-            // Add blank line after status bar
-            Console.SetCursorPosition(0, _originalTop + 3);
-            Console.WriteLine();
+            // Wait for the progress bar to complete final update
+            _completionEvent.WaitOne(1000);
+
+            // Give a small delay for visual feedback
+            Thread.Sleep(500);
+
+            // Display final statistics in a table
+            var table = new Table();
+            table.AddColumn("[yellow]Statistic[/]");
+            table.AddColumn("[yellow]Value[/]");
+
+            table.AddRow("[green]Success Count[/]", _successCount.ToString());
+            table.AddRow("[red]Failure Count[/]", _failureCount.ToString());
+            table.AddRow("[blue]Total Operations[/]", _totalOperations.ToString());
+            table.AddRow("[blue]Average Latency[/]", $"{GetAverageLatency():F2}ms");
+            table.AddRow("[blue]Requests Per Second[/]", $"{GetRequestsPerSecond():F2}");
+            table.AddRow("[blue]Elapsed Time[/]", $"{_stopwatch.Elapsed:hh\\:mm\\:ss\\.fff}");
+            table.AddRow("[blue]Success Rate[/]", $"{(_totalOperations > 0 ? (double)_successCount / _totalOperations * 100 : 0):F2}%");
+
+            // Add border and style to the table
+            table.Border(TableBorder.Rounded);
+            table.Expand();
+
+            AnsiConsole.WriteLine();
+            AnsiConsole.Write(table);
+            AnsiConsole.WriteLine();
 
             // Return final statistics
             return new TestStatistics
@@ -140,10 +172,8 @@ namespace SimulationTest.Core
                 SuccessCount = _successCount,
                 FailureCount = _failureCount,
                 TotalOperations = _totalOperations,
-                AverageLatencyMs = _successCount > 0 ? (double)_totalLatencyMs / _successCount : 0,
-                RequestsPerSecond = _stopwatch.ElapsedMilliseconds > 0
-                    ? _successCount / (_stopwatch.Elapsed.TotalSeconds)
-                    : 0,
+                AverageLatencyMs = GetAverageLatency(),
+                RequestsPerSecond = GetRequestsPerSecond(),
                 ElapsedTime = _stopwatch.Elapsed
             };
         }

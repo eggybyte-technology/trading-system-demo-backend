@@ -23,6 +23,7 @@ namespace TradingService.Controllers
         private readonly IOrderService _orderService;
         private readonly ILoggerService _logger;
         private readonly IApiLoggingService _apiLogger;
+        private readonly IWebSocketService _webSocketService;
         private readonly JsonSerializerOptions _jsonOptions = new JsonSerializerOptions { WriteIndented = true };
 
         /// <summary>
@@ -31,11 +32,13 @@ namespace TradingService.Controllers
         public OrderController(
             IOrderService orderService,
             ILoggerService logger,
-            IApiLoggingService apiLogger)
+            IApiLoggingService apiLogger,
+            IWebSocketService webSocketService)
         {
             _orderService = orderService;
             _logger = logger;
             _apiLogger = apiLogger;
+            _webSocketService = webSocketService;
         }
 
         /// <summary>

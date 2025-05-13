@@ -62,6 +62,9 @@ builder.Services.AddScoped<IHttpClientService, HttpClientService>();
 // Register CommonLib/Api services for inter-service communication
 builder.Services.AddTradingSystemServices();
 
+// Add WebSocketService
+builder.Services.AddSingleton<IWebSocketService, WebSocketService>();
+
 // ======================================================
 // JWT AUTHENTICATION CONFIGURATION
 // ======================================================

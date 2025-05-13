@@ -42,6 +42,35 @@ namespace CommonLib.Api
             return await GetAsync<MarketDepthResponse>($"/market/depth?{queryString}");
         }
 
+        /// <summary>
+        /// Updates the order book with new price levels
+        /// </summary>
+        /// <param name="token">Authentication token for service-to-service communication</param>
+        /// <param name="request">The order book update request</param>
+        /// <returns>Order book update response</returns>
+        public async Task<OrderBookUpdateResponse> UpdateOrderBookAsync(string token, OrderBookUpdateRequest request)
+        {
+            return await PostAsync<OrderBookUpdateResponse, OrderBookUpdateRequest>("/orderbook/update", request, token);
+        }
+
+        /// <summary>
+        /// Updates the order book directly from WebSocketDepthData
+        /// </summary>
+        /// <param name="token">Authentication token for service-to-service communication</param>
+        /// <param name="depthData">The WebSocket depth data</param>
+        /// <returns>Order book update response</returns>
+        public async Task<OrderBookUpdateResponse> UpdateOrderBookAsync(string token, WebSocketDepthData depthData)
+        {
+            var request = new OrderBookUpdateRequest
+            {
+                Symbol = depthData.Symbol,
+                Bids = depthData.Bids,
+                Asks = depthData.Asks
+            };
+
+            return await UpdateOrderBookAsync(token, request);
+        }
+
         public async Task<KlineResponse> GetKlinesAsync(KlineRequest request)
         {
             var queryParams = new Dictionary<string, string?>
@@ -57,12 +86,12 @@ namespace CommonLib.Api
             return await GetAsync<KlineResponse>($"/market/klines?{queryString}");
         }
 
-        public async Task<TradesResponse> GetRecentTradesAsync(string symbol, int limit = 100)
+        public async Task<TradesResponse> GetRecentTradesAsync(RecentTradesRequest request)
         {
             var queryParams = new Dictionary<string, string?>
             {
-                ["symbol"] = symbol,
-                ["limit"] = limit.ToString()
+                ["symbol"] = request.Symbol,
+                ["limit"] = request.Limit.ToString()
             };
 
             var queryString = BuildQueryString(queryParams);

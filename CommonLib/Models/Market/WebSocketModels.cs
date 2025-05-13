@@ -331,4 +331,41 @@ namespace CommonLib.Models.Market
         /// </summary>
         public long UpdateTime { get; set; } = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
     }
+
+    /// <summary>
+    /// Order book update request model for MarketDataService
+    /// </summary>
+    public class OrderBookUpdateRequest
+    {
+        /// <summary>
+        /// Symbol for the order book to update
+        /// </summary>
+        public string Symbol { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Bid price levels to add or update [price, quantity]
+        /// </summary>
+        public List<List<decimal>> Bids { get; set; } = new();
+
+        /// <summary>
+        /// Ask price levels to add or update [price, quantity]
+        /// </summary>
+        public List<List<decimal>> Asks { get; set; } = new();
+    }
+
+    /// <summary>
+    /// Order book update response
+    /// </summary>
+    public class OrderBookUpdateResponse
+    {
+        /// <summary>
+        /// Whether the update was successful
+        /// </summary>
+        public bool Success { get; set; }
+
+        /// <summary>
+        /// Response message
+        /// </summary>
+        public string Message { get; set; } = string.Empty;
+    }
 }

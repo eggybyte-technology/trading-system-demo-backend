@@ -17,10 +17,10 @@ namespace SimulationTest.Tests
 
     public enum OrderType
     {
-        Limit,
-        Market,
-        StopLoss,
-        StopLossLimit
+        LIMIT,
+        MARKET,
+        STOP_LOSS,
+        STOP_LOSS_LIMIT
     }
 
     public enum TimeInForce
@@ -193,39 +193,39 @@ namespace SimulationTest.Tests
             _logger.Info($"Creating {ordersPerUser} orders for each user...");
 
             var random = new Random();
-            var tasks = new List<Task>();
+            var userTasks = new List<Task>();
 
-            // Process each user
+            // 为每个用户创建一个专门的任务
             foreach (var user in _users)
             {
-                var userTasks = new List<Task>();
-
-                // Create orders for this user
-                for (int i = 0; i < ordersPerUser; i++)
+                // 为每个用户创建一个独立的任务，在其中同步创建订单
+                var userTask = Task.Run(async () =>
                 {
-                    // Add a small delay between requests for each user to prevent overloading
-                    await Task.Delay(10);
+                    _logger.Info($"Starting order creation for user {user.Username}");
 
-                    // Create a task for this order
-                    var task = Task.Run(async () =>
+                    // 创建一个独立的随机数生成器，避免线程安全问题
+                    var userRandom = new Random(Guid.NewGuid().GetHashCode());
+
+                    // 同步执行该用户的所有订单创建
+                    for (int i = 0; i < ordersPerUser; i++)
                     {
-                        var orderSide = random.Next(2) == 0 ? OrderSide.BUY : OrderSide.SELL;
-                        var symbol = _testSymbols[random.Next(_testSymbols.Length)];
-                        var price = Math.Round(random.NextDouble() * 1000, 2) + 100; // Random price between 100-1100
-                        var quantity = Math.Round(random.NextDouble() * 10, 4) + 0.1; // Random quantity between 0.1-10.1
+                        var orderSide = userRandom.Next(2) == 0 ? OrderSide.BUY : OrderSide.SELL;
+                        var symbol = _testSymbols[userRandom.Next(_testSymbols.Length)];
+                        var price = Math.Round(userRandom.NextDouble() * 1000, 2) + 100; // Random price between 100-1100
+                        var quantity = Math.Round(userRandom.NextDouble() * 10, 4) + 0.1; // Random quantity between 0.1-10.1
 
                         var orderRequest = new CreateOrderRequest
                         {
                             Symbol = symbol,
                             Side = orderSide.ToString(),
-                            Type = OrderType.Limit.ToString(),
+                            Type = OrderType.LIMIT.ToString(),
                             Price = (decimal)price,
                             Quantity = (decimal)quantity,
                             TimeInForce = TimeInForce.GTC.ToString()
                         };
 
                         string operationType = $"Create {orderSide} Order for {symbol}";
-                        _logger.Debug($"Creating order for user {user.Username}: {orderSide} {quantity} {symbol} @ {price}");
+                        _logger.Debug($"Creating order {i + 1}/{ordersPerUser} for user {user.Username}: {orderSide} {quantity} {symbol} @ {price}");
 
                         var stopwatch = Stopwatch.StartNew();
                         try
@@ -233,14 +233,17 @@ namespace SimulationTest.Tests
                             var result = await _tradingService.CreateOrderAsync(user.Token, orderRequest);
                             stopwatch.Stop();
 
-                            _results.Add(new OperationResult
+                            lock (_results)
                             {
-                                OperationType = operationType,
-                                UserId = user.UserId,
-                                Success = true,
-                                LatencyMs = stopwatch.ElapsedMilliseconds,
-                                Timestamp = DateTime.Now
-                            });
+                                _results.Add(new OperationResult
+                                {
+                                    OperationType = operationType,
+                                    UserId = user.UserId,
+                                    Success = true,
+                                    LatencyMs = stopwatch.ElapsedMilliseconds,
+                                    Timestamp = DateTime.Now
+                                });
+                            }
 
                             statusBar.ReportSuccess(stopwatch.ElapsedMilliseconds);
                             _logger.Debug($"Created order for user {user.Username}: {result.OrderId}");
@@ -248,30 +251,36 @@ namespace SimulationTest.Tests
                         catch (Exception ex)
                         {
                             stopwatch.Stop();
-                            _results.Add(new OperationResult
+
+                            lock (_results)
                             {
-                                OperationType = operationType,
-                                UserId = user.UserId,
-                                Success = false,
-                                LatencyMs = stopwatch.ElapsedMilliseconds,
-                                Timestamp = DateTime.Now,
-                                ErrorMessage = ex.Message
-                            });
+                                _results.Add(new OperationResult
+                                {
+                                    OperationType = operationType,
+                                    UserId = user.UserId,
+                                    Success = false,
+                                    LatencyMs = stopwatch.ElapsedMilliseconds,
+                                    Timestamp = DateTime.Now,
+                                    ErrorMessage = ex.Message
+                                });
+                            }
 
                             statusBar.ReportFailure();
                             _logger.Debug($"Failed to create order for user {user.Username}: {ex.Message}");
                         }
-                    });
 
-                    userTasks.Add(task);
-                }
+                        // 加入小的随机延迟，避免完全同时发送请求
+                        await Task.Delay(userRandom.Next(5, 20));
+                    }
 
-                // Add this user's tasks to the overall task list
-                tasks.AddRange(userTasks);
+                    _logger.Info($"Completed creating {ordersPerUser} orders for user {user.Username}");
+                });
+
+                userTasks.Add(userTask);
             }
 
-            // Wait for all order creation tasks to complete
-            await Task.WhenAll(tasks);
+            // 等待所有用户任务完成
+            await Task.WhenAll(userTasks);
 
             _logger.Info("Completed order creation for all users");
         }
