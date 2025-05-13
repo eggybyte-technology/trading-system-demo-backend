@@ -33,7 +33,7 @@ namespace SimulationTest.Tests
         /// <summary>
         /// Admin authentication token for privileged operations
         /// </summary>
-        public string AdminToken { get; set; }
+        public string AdminToken { get; set; } = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbiIsImh0dHA6Ly9zY2hlbWFzLnhtbHNvYXAub3JnL3dzLzIwMDUvMDUvaWRlbnRpdHkvY2xhaW1zL25hbWVpZGVudGlmaWVyIjoiYWRtaW4iLCJVc2VySWQiOiJhZG1pbiIsIm5hbWUiOiJhZG1pbiIsImVtYWlsIjoiYWRtaW5AdHJhZGluZ3N5c3RlbS5jb20iLCJqdGkiOiIyZDg3ZjFkMi0xNDc5LTQ2MDEtODg2Zi1jNzZlMGU1NTQwNzYiLCJodHRwOi8vc2NoZW1hcy5taWNyb3NvZnQuY29tL3dzLzIwMDgvMDYvaWRlbnRpdHkvY2xhaW1zL3JvbGUiOlsiQWRtaW4iLCJVc2VyIiwiTWFuYWdlciJdLCJJc1N5c3RlbVRva2VuIjoidHJ1ZSIsImV4cCI6MTc0NzE3NzE5MywiaXNzIjoiVHJhZGluZ1N5c3RlbSIsImF1ZCI6IlRyYWRpbmdTeXN0ZW1DbGllbnRzIn0.j-GVBO76xQMc1Jjyl5tpDq9eH6puvj8Bi0fmDgPeCug";
 
         /// <summary>
         /// Refresh token for authentication

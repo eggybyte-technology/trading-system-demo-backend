@@ -45,50 +45,49 @@ namespace SimulationTest.Core
             report.AppendLine($"- Success rate: {stats.SuccessRate:F2}%");
             report.AppendLine($"- Successful operations: {stats.SuccessCount}");
             report.AppendLine($"- Failed operations: {stats.FailureCount}");
-            report.AppendLine($"- Average latency: {stats.AverageLatencyMs:F2} ms");
-            report.AppendLine($"- Requests per second: {stats.RequestsPerSecond:F2}");
+            report.AppendLine();
+
+            // Order-specific metrics (primary focus of the report)
+            report.AppendLine("=======================================================");
+            report.AppendLine("||              ORDER CREATION METRICS               ||");
+            report.AppendLine("=======================================================");
+            report.AppendLine($"- Order operations: {stats.OrderSuccessCount + stats.OrderFailureCount}");
+            report.AppendLine($"- Successful orders: {stats.OrderSuccessCount}");
+            report.AppendLine($"- Failed orders: {stats.OrderFailureCount}");
+            report.AppendLine($"- Order success rate: {stats.OrderSuccessRate:F2}%");
+            report.AppendLine($"- Orders per second: {stats.OrderRequestsPerSecond:F2}");
+            report.AppendLine($"- Average order latency: {stats.OrderAverageLatencyMs:F2} ms");
+            report.AppendLine();
+            report.AppendLine("Order Latency Analysis:");
+            report.AppendLine($"- Min order latency: {stats.OrderMinLatencyMs} ms");
+            report.AppendLine($"- P50 order latency: {stats.OrderP50LatencyMs} ms");
+            report.AppendLine($"- P90 order latency: {stats.OrderP90LatencyMs} ms");
+            report.AppendLine($"- P95 order latency: {stats.OrderP95LatencyMs} ms");
+            report.AppendLine($"- P99 order latency: {stats.OrderP99LatencyMs} ms");
+            report.AppendLine($"- Max order latency: {stats.OrderMaxLatencyMs} ms");
             report.AppendLine();
 
             // Add latency analysis if we have results
             if (stats.Results.Count > 0)
             {
-                report.AppendLine("Latency Analysis:");
+                report.AppendLine("Detailed Operation Analysis:");
 
                 var successfulResults = stats.Results.Where(r => r.Success).ToList();
 
-                if (successfulResults.Any())
+                // Group results by operation type
+                var operationGroups = successfulResults.GroupBy(r => r.OperationType);
+
+                foreach (var group in operationGroups)
                 {
-                    var minLatency = successfulResults.Min(r => r.LatencyMs);
-                    var maxLatency = successfulResults.Max(r => r.LatencyMs);
-                    var p50Latency = GetPercentileLatency(successfulResults, 50);
-                    var p90Latency = GetPercentileLatency(successfulResults, 90);
-                    var p95Latency = GetPercentileLatency(successfulResults, 95);
-                    var p99Latency = GetPercentileLatency(successfulResults, 99);
-
-                    report.AppendLine($"- Min latency: {minLatency} ms");
-                    report.AppendLine($"- P50 latency: {p50Latency} ms");
-                    report.AppendLine($"- P90 latency: {p90Latency} ms");
-                    report.AppendLine($"- P95 latency: {p95Latency} ms");
-                    report.AppendLine($"- P99 latency: {p99Latency} ms");
-                    report.AppendLine($"- Max latency: {maxLatency} ms");
-
-                    // Group results by operation type
-                    var operationGroups = successfulResults.GroupBy(r => r.OperationType);
-                    report.AppendLine();
-                    report.AppendLine("Operation-specific Analysis:");
-
-                    foreach (var group in operationGroups)
-                    {
-                        var avgLatency = group.Average(r => r.LatencyMs);
-                        var opMaxLatency = group.Max(r => r.LatencyMs);
-                        var opMinLatency = group.Min(r => r.LatencyMs);
-                        var opCount = group.Count();
-                        report.AppendLine($"- {group.Key}:");
-                        report.AppendLine($"  * Count: {opCount}");
-                        report.AppendLine($"  * Avg latency: {avgLatency:F2} ms");
-                        report.AppendLine($"  * Min latency: {opMinLatency} ms");
-                        report.AppendLine($"  * Max latency: {opMaxLatency} ms");
-                    }
+                    var avgLatency = group.Average(r => r.LatencyMs);
+                    var opMaxLatency = group.Max(r => r.LatencyMs);
+                    var opMinLatency = group.Min(r => r.LatencyMs);
+                    var opCount = group.Count();
+                    report.AppendLine($"- {group.Key}:");
+                    report.AppendLine($"  * Count: {opCount}");
+                    report.AppendLine($"  * Avg latency: {avgLatency:F2} ms");
+                    report.AppendLine($"  * Min latency: {opMinLatency} ms");
+                    report.AppendLine($"  * Max latency: {opMaxLatency} ms");
                 }
             }
 
@@ -114,12 +113,28 @@ namespace SimulationTest.Core
                     },
                     TestResults = new
                     {
+                        // Overall results
                         SuccessCount = stats.SuccessCount,
                         FailureCount = stats.FailureCount,
                         SuccessRate = stats.SuccessRate,
                         AverageLatencyMs = stats.AverageLatencyMs,
                         RequestsPerSecond = stats.RequestsPerSecond,
                         ElapsedTime = stats.ElapsedTime.ToString(),
+
+                        // Order-specific results
+                        OrderSuccessCount = stats.OrderSuccessCount,
+                        OrderFailureCount = stats.OrderFailureCount,
+                        OrderSuccessRate = stats.OrderSuccessRate,
+                        OrderAverageLatencyMs = stats.OrderAverageLatencyMs,
+                        OrderRequestsPerSecond = stats.OrderRequestsPerSecond,
+                        OrderMinLatencyMs = stats.OrderMinLatencyMs,
+                        OrderMaxLatencyMs = stats.OrderMaxLatencyMs,
+                        OrderP50LatencyMs = stats.OrderP50LatencyMs,
+                        OrderP90LatencyMs = stats.OrderP90LatencyMs,
+                        OrderP95LatencyMs = stats.OrderP95LatencyMs,
+                        OrderP99LatencyMs = stats.OrderP99LatencyMs,
+
+                        // Detailed results
                         Results = stats.Results
                     }
                 };

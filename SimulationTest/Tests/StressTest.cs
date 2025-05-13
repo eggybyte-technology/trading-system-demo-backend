@@ -3,6 +3,7 @@ using CommonLib.Models.Identity;
 using CommonLib.Models.Trading;
 using SimulationTest.Core;
 using CommonLib.Api;
+using Spectre.Console;
 
 namespace SimulationTest.Tests
 {
@@ -98,9 +99,35 @@ namespace SimulationTest.Tests
                 var statistics = statusBar.Stop();
                 statistics.Results = _results;
 
+                // Display stress test summary with ordering metrics being the primary focus
+                AnsiConsole.WriteLine();
+                AnsiConsole.Write(new Rule("[yellow]Stress Test Summary[/]").RuleStyle("grey").LeftJustified());
+                AnsiConsole.MarkupLine($"[blue]Users Created:[/] {_users.Count}");
+                AnsiConsole.MarkupLine($"[blue]Orders Per User:[/] {ordersPerUser}");
+                AnsiConsole.MarkupLine($"[blue]Total Operations:[/] {statistics.TotalOperations}");
+                AnsiConsole.MarkupLine($"[blue]Elapsed Time:[/] {stopwatch.Elapsed:hh\\:mm\\:ss\\.fff}");
+                AnsiConsole.WriteLine();
+
+                // Order-specific metrics section
+                AnsiConsole.Write(new Rule("[yellow]Order Creation Metrics[/]").RuleStyle("grey").LeftJustified());
+                AnsiConsole.MarkupLine($"[green]Successful Orders:[/] {statistics.OrderSuccessCount}");
+                AnsiConsole.MarkupLine($"[red]Failed Orders:[/] {statistics.OrderFailureCount}");
+                AnsiConsole.MarkupLine($"[blue]Order Success Rate:[/] {statistics.OrderSuccessRate:F2}%");
+                AnsiConsole.MarkupLine($"[blue]Orders Per Second:[/] {statistics.OrderRequestsPerSecond:F2}");
+                AnsiConsole.MarkupLine($"[blue]Average Order Latency:[/] {statistics.OrderAverageLatencyMs:F2}ms");
+                AnsiConsole.WriteLine();
+
+                // Detailed order latency metrics
+                AnsiConsole.Write(new Rule("[yellow]Order Latency Percentiles[/]").RuleStyle("grey").LeftJustified());
+                AnsiConsole.MarkupLine($"[blue]Min Latency:[/] {statistics.OrderMinLatencyMs}ms");
+                AnsiConsole.MarkupLine($"[blue]P50 Latency:[/] {statistics.OrderP50LatencyMs}ms");
+                AnsiConsole.MarkupLine($"[blue]P90 Latency:[/] {statistics.OrderP90LatencyMs}ms");
+                AnsiConsole.MarkupLine($"[blue]P95 Latency:[/] {statistics.OrderP95LatencyMs}ms");
+                AnsiConsole.MarkupLine($"[blue]P99 Latency:[/] {statistics.OrderP99LatencyMs}ms");
+                AnsiConsole.MarkupLine($"[blue]Max Latency:[/] {statistics.OrderMaxLatencyMs}ms");
+                AnsiConsole.WriteLine();
+
                 _logger.Success($"Stress test completed in {stopwatch.Elapsed:hh\\:mm\\:ss\\.fff}");
-                _logger.Info($"Success rate: {statistics.SuccessRate:F2}%");
-                _logger.Info($"Average latency: {statistics.AverageLatencyMs:F2} ms");
 
                 // Generate report
                 _reportGenerator.GenerateStressTestReport(_testDirectory, statistics, userCount, ordersPerUser);
@@ -245,7 +272,7 @@ namespace SimulationTest.Tests
                                 });
                             }
 
-                            statusBar.ReportSuccess(stopwatch.ElapsedMilliseconds);
+                            statusBar.ReportSuccess(stopwatch.ElapsedMilliseconds, true); // Mark as order creation
                             _logger.Debug($"Created order for user {user.Username}: {result.OrderId}");
                         }
                         catch (Exception ex)
@@ -265,7 +292,7 @@ namespace SimulationTest.Tests
                                 });
                             }
 
-                            statusBar.ReportFailure();
+                            statusBar.ReportFailure(true); // Mark as order creation
                             _logger.Debug($"Failed to create order for user {user.Username}: {ex.Message}");
                         }
 
